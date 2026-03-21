@@ -30,17 +30,7 @@ struct ContentView: View {
             }
 
             Divider()
-            HStack {
-                Spacer()
-                Button("Quit ReadRead") {
-                    NSApplication.shared.terminate(nil)
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.vertical, 8)
+            bottomBar
         }
         .frame(width: 380, height: 560)
         .background(.ultraThinMaterial)
@@ -298,6 +288,30 @@ struct ContentView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+    }
+
+    // MARK: - Bottom Bar
+
+    private var bottomBar: some View {
+        HStack {
+            Menu {
+                Text("ReadRead v0.1.0")
+                Divider()
+                Button("Quit ReadRead") {
+                    NSApplication.shared.terminate(nil)
+                }
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Banners

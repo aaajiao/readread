@@ -50,7 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func loadMenuBarIcon() -> NSImage {
-        // Try app bundle Resources/ first, then SPM bundle
         let candidates = [
             Bundle.main.resourceURL?.appendingPathComponent("menubar-icon@2x.png"),
             Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/menubar-icon@2x.png"),
@@ -61,7 +60,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return img
             }
         }
-        // Fallback to SF Symbol
         return NSImage(systemSymbolName: "headphones", accessibilityDescription: "ReadRead")!
     }
 
@@ -79,7 +77,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
             Task { @MainActor in
-                // Don't close panel while a file picker is open
                 let hasOpenPanel = NSApp.windows.contains { $0 is NSOpenPanel }
                 if !hasOpenPanel {
                     self?.panel.orderOut(nil)
@@ -110,7 +107,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var x = buttonRect.midX - panelWidth / 2
         let y = buttonRect.minY - panelHeight - 4
 
-        // Keep panel on screen
         if let screen = buttonWindow.screen ?? NSScreen.main {
             let screenFrame = screen.visibleFrame
             x = max(screenFrame.minX + 8, min(x, screenFrame.maxX - panelWidth - 8))
