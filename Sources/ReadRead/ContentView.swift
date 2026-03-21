@@ -39,7 +39,7 @@ struct ContentView: View {
             }
             .padding(.vertical, 8)
         }
-        .frame(width: 360, height: 440)
+        .frame(width: 380, height: 560)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .onChange(of: appState.selectedVoice) {
@@ -118,7 +118,8 @@ struct ContentView: View {
     // MARK: - Reading
 
     private var readingSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
+            // Title
             VStack(alignment: .leading, spacing: 2) {
                 Text(appState.currentTitle)
                     .font(.headline)
@@ -131,47 +132,89 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .padding(.top, 10)
 
-            VStack(spacing: 4) {
+            // Scrollable text display — continuous flow
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(appState.textChunks.enumerated()), id: \.offset) { index, chunk in
+                            Text(chunk)
+                                .font(.system(size: 13, design: .default))
+                                .lineSpacing(5)
+                                .opacity(
+                                    index == appState.currentChunkIndex
+                                        ? 1.0
+                                        : index < appState.currentChunkIndex
+                                            ? 0.3
+                                            : 0.5
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 4)
+                                .id(index)
+                                .animation(.easeInOut(duration: 0.4), value: appState.currentChunkIndex)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                .frame(maxHeight: .infinity)
+                .mask(
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 12)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 12)
+                    }
+                )
+                .onChange(of: appState.currentChunkIndex) { _, newIndex in
+                    withAnimation(.easeInOut(duration: 0.6)) {
+                        proxy.scrollTo(newIndex, anchor: .top)
+                    }
+                }
+            }
+
+            // Progress + controls
+            VStack(spacing: 8) {
                 ProgressView(value: appState.progress)
                     .progressViewStyle(.linear)
 
-                HStack {
+                HStack(spacing: 24) {
+                    Button { appState.previousChunk() } label: {
+                        Image(systemName: "backward.fill")
+                    }
+                    .disabled(appState.currentChunkIndex == 0)
+
+                    Button { appState.togglePlayPause() } label: {
+                        Image(systemName: appState.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.title)
+                    }
+
+                    Button { appState.nextChunk() } label: {
+                        Image(systemName: "forward.fill")
+                    }
+                    .disabled(appState.currentChunkIndex >= appState.textChunks.count - 1)
+
+                    Spacer()
+
                     if !appState.textChunks.isEmpty {
-                        Text("\(appState.currentChunkIndex + 1) / \(appState.textChunks.count)")
+                        Text("\(appState.currentChunkIndex + 1)/\(appState.textChunks.count)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
-                    Spacer()
+
+                    Button { appState.stop() } label: {
+                        Image(systemName: "stop.fill")
+                    }
                 }
+                .buttonStyle(.borderless)
             }
-
-            HStack(spacing: 24) {
-                Button { appState.previousChunk() } label: {
-                    Image(systemName: "backward.fill")
-                }
-                .disabled(appState.currentChunkIndex == 0)
-
-                Button { appState.togglePlayPause() } label: {
-                    Image(systemName: appState.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.largeTitle)
-                }
-
-                Button { appState.nextChunk() } label: {
-                    Image(systemName: "forward.fill")
-                }
-                .disabled(appState.currentChunkIndex >= appState.textChunks.count - 1)
-
-                Spacer()
-
-                Button { appState.stop() } label: {
-                    Image(systemName: "stop.fill")
-                }
-            }
-            .buttonStyle(.borderless)
+            .padding(.horizontal)
+            .padding(.bottom, 10)
         }
-        .padding()
     }
 
     // MARK: - Settings

@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupPanel() {
         panel = FloatingPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 440)
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 560)
         )
         panel.contentView = NSHostingView(
             rootView: ContentView(appState: appState)

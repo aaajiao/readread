@@ -211,22 +211,57 @@ final class AppState {
     // MARK: - Private
 
     private func readChunks(from startIndex: Int = 0) async {
+        // Pre-fetch first chunk
+        var pendingAudio: Task<Data, any Error>? = Task {
+            try await ttsEngine.synthesize(
+                text: textChunks[startIndex],
+                voice: selectedVoice, speed: speed, lang: selectedLanguage
+            )
+        }
+
         for index in startIndex..<textChunks.count {
-            guard !Task.isCancelled else { break }
+            guard !Task.isCancelled else {
+                pendingAudio?.cancel()
+                break
+            }
 
             currentChunkIndex = index
 
             do {
-                let audioData = try await ttsEngine.synthesize(
-                    text: textChunks[index],
-                    voice: selectedVoice,
-                    speed: speed,
-                    lang: selectedLanguage
-                )
-                guard !Task.isCancelled else { break }
+                // Await current chunk's audio (already pre-fetching or fetch now)
+                let audioData: Data
+                if let pending = pendingAudio {
+                    audioData = try await pending.value
+                } else {
+                    audioData = try await ttsEngine.synthesize(
+                        text: textChunks[index],
+                        voice: selectedVoice, speed: speed, lang: selectedLanguage
+                    )
+                }
+
+                guard !Task.isCancelled else {
+                    pendingAudio?.cancel()
+                    break
+                }
+
+                // Start pre-fetching next chunk BEFORE playing current
+                if index + 1 < textChunks.count {
+                    let nextText = textChunks[index + 1]
+                    let voice = selectedVoice
+                    let spd = speed
+                    let lang = selectedLanguage
+                    pendingAudio = Task {
+                        try await ttsEngine.synthesize(
+                            text: nextText, voice: voice, speed: spd, lang: lang
+                        )
+                    }
+                } else {
+                    pendingAudio = nil
+                }
 
                 try await audioPlayer.playAndWait(data: audioData)
             } catch {
+                pendingAudio?.cancel()
                 if !Task.isCancelled {
                     errorMessage = error.localizedDescription
                 }
