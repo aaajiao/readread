@@ -107,7 +107,7 @@ mkdir -p "$APP_DIR/Resources/python/bin"
 cp "$PYTHON_CACHE/bin/python3" "$APP_DIR/Resources/python/bin/python3"
 cp "$PYTHON_CACHE/bin/python3.12" "$APP_DIR/Resources/python/bin/python3.12" 2>/dev/null || true
 
-# Copy lib (essential parts)
+# Copy lib (essential parts, strip unused packages to reduce bundle size)
 rsync -a \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
@@ -125,6 +125,12 @@ rsync -a \
     --exclude='setuptools-*/' \
     --exclude='_distutils_hack/' \
     --exclude='pkg_resources/' \
+    --exclude='sympy/' \
+    --exclude='sympy-*.dist-info/' \
+    --exclude='mpmath/' \
+    --exclude='mpmath-*.dist-info/' \
+    --exclude='build/' \
+    --exclude='build-*.dist-info/' \
     "$PYTHON_CACHE/lib/" "$APP_DIR/Resources/python/lib/"
 
 echo "  Done."
