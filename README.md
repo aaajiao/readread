@@ -1,6 +1,6 @@
 # ReadRead
 
-<img src="Screenshot_readread.png" width="300">
+<img src="Screenshot_readread00.png" width="300">
 
 A macOS menu bar app that reads web pages and local files aloud using offline text-to-speech.
 
