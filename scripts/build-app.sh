@@ -49,6 +49,8 @@ cat > "$APP_DIR/Info.plist" << 'PLIST'
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>
@@ -151,11 +153,17 @@ cp "$MODEL_CACHE/kokoro-v1.0.fp16.onnx" "$APP_DIR/Resources/models/"
 cp "$MODEL_CACHE/voices-v1.0.bin" "$APP_DIR/Resources/models/"
 echo "  Done."
 
-# ── Step 5: TTS server script + sign ────────────────────────────────
+# ── Step 5: TTS server script + icons + sign ─────────────────────────
 echo "[5/5] Finalizing..."
 cp "$PROJECT_DIR/tts_server/tts_server.py" "$APP_DIR/Resources/tts_server.py"
 
-# Ad-hoc code sign
+# App icon + menu bar icons
+cp "$PROJECT_DIR/Sources/ReadRead/Resources/AppIcon.icns" "$APP_DIR/Resources/AppIcon.icns"
+cp "$PROJECT_DIR/Sources/ReadRead/Resources/menubar-icon.png" "$APP_DIR/Resources/"
+cp "$PROJECT_DIR/Sources/ReadRead/Resources/menubar-icon@2x.png" "$APP_DIR/Resources/"
+
+# Clean extended attributes and ad-hoc code sign
+xattr -cr "$BUILD_DIR/ReadRead.app" 2>/dev/null
 codesign --force --deep --sign - "$BUILD_DIR/ReadRead.app" 2>/dev/null
 
 # Summary

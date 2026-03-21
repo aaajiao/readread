@@ -39,15 +39,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "headphones",
-                accessibilityDescription: "ReadRead"
-            )
+            let image = loadMenuBarIcon()
+            image.size = NSSize(width: 18, height: 18)
+            button.image = image
             button.action = #selector(togglePanel)
             button.target = self
         }
+    }
+
+    private func loadMenuBarIcon() -> NSImage {
+        // Try app bundle Resources/ first, then SPM bundle
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent("menubar-icon@2x.png"),
+            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/menubar-icon@2x.png"),
+            Bundle.module.url(forResource: "menubar-icon@2x", withExtension: "png", subdirectory: "Resources"),
+        ]
+        for case let url? in candidates {
+            if let img = NSImage(contentsOf: url) {
+                return img
+            }
+        }
+        // Fallback to SF Symbol
+        return NSImage(systemSymbolName: "headphones", accessibilityDescription: "ReadRead")!
     }
 
     private func setupPanel() {
