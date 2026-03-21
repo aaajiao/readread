@@ -1,5 +1,7 @@
 # ReadRead
 
+![Screenshot](Screenshot_readread.png)
+
 A macOS menu bar app that reads web pages and local files aloud using offline text-to-speech.
 
 Paste a URL, click Read, and listen. The app extracts the article text, detects the language, picks an appropriate voice, and starts reading — with a live text display that follows along.
@@ -22,7 +24,7 @@ Paste a URL, click Read, and listen. The app extracts the article text, detects 
 ## Build
 
 ```bash
-# Build the self-contained .app (~508MB, includes Python + model)
+# Build the self-contained .app (~490MB, includes Python + model)
 ./scripts/build-app.sh
 
 # Open it
