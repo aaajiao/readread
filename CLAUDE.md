@@ -47,6 +47,15 @@ ReadRead is a macOS menu bar TTS reader with two processes:
 3. For each chunk: `TTSEngine.synthesize()` POSTs JSON to Python server → receives WAV bytes
 4. `AudioPlayerService.playAndWait()` plays WAV, suspends until done, then next chunk
 
+Audio pre-fetches the next chunk while the current one plays to minimize gaps between paragraphs.
+
+### UI States
+
+The panel has two distinct modes:
+
+- **Input mode** — centered logo, URL text field, Read button, Open File button
+- **Reading mode** — header (title + source + close button), scrolling text with highlighted current chunk, playback controls, voice/speed settings
+
 ## Important Conventions
 
 - **Voice lists are duplicated** in `ContentView.swift` and `tts_server.py` — keep them in sync when adding voices.
