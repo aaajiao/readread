@@ -142,6 +142,24 @@ struct ContentView: View {
                     Text(appState.currentDomain)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .onTapGesture {
+                            var input = appState.urlInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !input.isEmpty {
+                                if !input.contains("://") {
+                                    input = "https://" + input
+                                }
+                                if let url = URL(string: input) {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                        }
+                        .onHover { hovering in
+                            if hovering {
+                                NSCursor.pointingHand.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
                 }
             }
 
