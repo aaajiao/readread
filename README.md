@@ -54,7 +54,7 @@ When you paste a URL, the Swift app fetches the page content through the Defuddl
 ## Tech stack
 
 - Swift 6 / SwiftUI / AppKit (zero external Swift dependencies)
-- Python 3.12 (bundled standalone) + kokoro-onnx + misaki (Chinese/Japanese G2P)
+- Python 3.12 (bundled standalone) + [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) + [misaki](https://github.com/hexgrad/misaki) (Chinese/Japanese G2P)
 - Kokoro v1.0 fp16 ONNX model (82M parameters)
 
 ## License
