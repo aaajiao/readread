@@ -6,17 +6,20 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            inputSection
-
             if appState.hasContent {
+                // ── Reading mode ──
+                readingHeader
                 Divider()
                 readingSection
+                Divider()
+                settingsSection
+            } else {
+                // ── Input mode ──
+                inputSection
+                Spacer(minLength: 0)
+                Divider()
+                settingsSection
             }
-
-            Spacer(minLength: 0)
-
-            Divider()
-            settingsSection
 
             if let error = appState.errorMessage {
                 errorBanner(error)
@@ -64,62 +67,82 @@ struct ContentView: View {
     // MARK: - Input
 
     private var inputSection: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                TextField("Paste URL here...", text: $appState.urlInput)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .onSubmit { Task { await appState.fetchURL() } }
+        VStack(spacing: 0) {
+            Spacer()
 
-                Button {
-                    if let str = NSPasteboard.general.string(forType: .string) {
-                        appState.urlInput = str
+            VStack(spacing: 16) {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.secondary)
+
+                Text("ReadRead")
+                    .font(.title2)
+                    .fontWeight(.medium)
+
+                Text("Paste a URL or open a file to start reading")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    TextField("Paste URL here...", text: $appState.urlInput)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .onSubmit { Task { await appState.fetchURL() } }
+
+                    Button {
+                        if let str = NSPasteboard.general.string(forType: .string) {
+                            appState.urlInput = str
+                        }
+                    } label: {
+                        Image(systemName: "doc.on.clipboard")
+                            .foregroundStyle(.secondary)
                     }
-                } label: {
-                    Image(systemName: "doc.on.clipboard")
-                        .foregroundStyle(.secondary)
+                    .buttonStyle(.borderless)
+                    .help("Paste from clipboard")
                 }
-                .buttonStyle(.borderless)
-                .help("Paste from clipboard")
-            }
-            .padding(10)
-            .background(.background.opacity(0.3))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(10)
+                .background(.background.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            HStack(spacing: 8) {
-                Button {
-                    Task { await appState.fetchURL() }
-                } label: {
-                    Label("Read", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .disabled(appState.urlInput.isEmpty || appState.playbackState == .loading)
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await appState.fetchURL() }
+                    } label: {
+                        Label("Read", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(appState.urlInput.isEmpty || appState.playbackState == .loading)
 
-                Button {
-                    appState.showFilePicker = true
-                } label: {
-                    Label("Open File", systemImage: "folder")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
+                    Button {
+                        appState.showFilePicker = true
+                    } label: {
+                        Label("Open File", systemImage: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
 
-                Spacer()
+                    Spacer()
 
-                if appState.playbackState == .loading {
-                    ProgressView()
-                        .controlSize(.small)
+                    if appState.playbackState == .loading {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                 }
             }
+            .padding()
         }
-        .padding()
     }
 
-    // MARK: - Reading
+    // MARK: - Reading Header
 
-    private var readingSection: some View {
-        VStack(spacing: 8) {
-            // Title
+    private var readingHeader: some View {
+        HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(appState.currentTitle)
                     .font(.headline)
@@ -131,10 +154,32 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal)
-            .padding(.top, 10)
 
+            Spacer()
+
+            Button {
+                appState.stop()
+                appState.currentText = ""
+                appState.currentTitle = ""
+                appState.currentDomain = ""
+                appState.textChunks = []
+                appState.urlInput = ""
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Close and return to input")
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Reading
+
+    private var readingSection: some View {
+        VStack(spacing: 8) {
             // Scrollable text display — continuous flow
             ScrollViewReader { proxy in
                 ScrollView {
