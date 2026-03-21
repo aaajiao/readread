@@ -150,6 +150,17 @@ final class AppState {
         }
     }
 
+    /// Restart from current chunk with new voice/speed settings
+    func restartCurrentChunk() {
+        guard isPlaying || isPaused else { return }
+        readingTask?.cancel()
+        audioPlayer.stop()
+        playbackState = .playing
+        readingTask = Task {
+            await readChunks(from: currentChunkIndex)
+        }
+    }
+
     func togglePlayPause() {
         switch playbackState {
         case .playing:

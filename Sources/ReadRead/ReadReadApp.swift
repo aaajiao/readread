@@ -64,7 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.panel.orderOut(nil)
+                // Don't close panel while a file picker is open
+                let hasOpenPanel = NSApp.windows.contains { $0 is NSOpenPanel }
+                if !hasOpenPanel {
+                    self?.panel.orderOut(nil)
+                }
             }
         }
     }

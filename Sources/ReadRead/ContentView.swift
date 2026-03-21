@@ -42,6 +42,12 @@ struct ContentView: View {
         .frame(width: 360, height: 440)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onChange(of: appState.selectedVoice) {
+            appState.restartCurrentChunk()
+        }
+        .onChange(of: appState.speed) {
+            appState.restartCurrentChunk()
+        }
         .fileImporter(
             isPresented: $appState.showFilePicker,
             allowedContentTypes: [.plainText]
