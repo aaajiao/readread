@@ -59,6 +59,7 @@ The panel has two distinct modes:
 ## Important Conventions
 
 - **Voice lists are duplicated** in `ContentView.swift` and `tts_server.py` — keep them in sync when adding voices.
+- **Per-language preferences** — voice and speed are saved to `UserDefaults` keyed by language code (`voice_{lang}`, `speed_{lang}`). On language detection, saved preferences are restored; otherwise falls back to `defaultVoice(for:)`.
 - **Language detection** uses Apple's NaturalLanguage framework on actual text content (not defuddle metadata, which can be wrong).
 - **Path resolution** in TTSEngine checks app bundle first for self-contained distribution, falls back to `~/.readread/` for development.
 - **No external Swift dependencies** — only Apple frameworks (SwiftUI, AppKit, AVFoundation, NaturalLanguage).
