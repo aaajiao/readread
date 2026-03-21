@@ -36,9 +36,11 @@ struct ContentView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .onChange(of: appState.selectedVoice) {
+            appState.saveLanguagePreferences()
             appState.restartCurrentChunk()
         }
         .onChange(of: appState.speed) {
+            appState.saveLanguagePreferences()
             appState.restartCurrentChunk()
         }
         .fileImporter(

@@ -102,7 +102,7 @@ final class AppState {
                 // Always detect from actual text — metadata can be wrong
                 let lang = detectLanguage(content.text)
                 selectedLanguage = lang
-                selectedVoice = defaultVoice(for: lang)
+                applyLanguagePreferences(for: lang)
             }
 
             startReading()
@@ -125,7 +125,7 @@ final class AppState {
             if autoDetectLanguage {
                 let detected = detectLanguage(content.text)
                 selectedLanguage = detected
-                selectedVoice = defaultVoice(for: detected)
+                applyLanguagePreferences(for: detected)
             }
 
             startReading()
@@ -205,6 +205,26 @@ final class AppState {
         playbackState = .playing
         readingTask = Task {
             await readChunks(from: currentChunkIndex)
+        }
+    }
+
+    // MARK: - Language Preferences Persistence
+
+    func saveLanguagePreferences() {
+        guard hasContent else { return }
+        UserDefaults.standard.set(selectedVoice, forKey: "voice_\(selectedLanguage)")
+        UserDefaults.standard.set(speed, forKey: "speed_\(selectedLanguage)")
+    }
+
+    private func applyLanguagePreferences(for language: String) {
+        if let voice = UserDefaults.standard.string(forKey: "voice_\(language)") {
+            selectedVoice = voice
+        } else {
+            selectedVoice = defaultVoice(for: language)
+        }
+        let savedSpeed = UserDefaults.standard.double(forKey: "speed_\(language)")
+        if savedSpeed > 0 {
+            speed = savedSpeed
         }
     }
 
