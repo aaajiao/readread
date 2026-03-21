@@ -113,20 +113,12 @@ class TTSHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._json_response(200, {"status": "ok"})
         elif self.path == "/voices":
-            voices = [
-                {"id": "af_heart", "name": "Heart", "lang": "en-us", "gender": "F"},
-                {"id": "af_bella", "name": "Bella", "lang": "en-us", "gender": "F"},
-                {"id": "af_sarah", "name": "Sarah", "lang": "en-us", "gender": "F"},
-                {"id": "af_nicole", "name": "Nicole", "lang": "en-us", "gender": "F"},
-                {"id": "am_michael", "name": "Michael", "lang": "en-us", "gender": "M"},
-                {"id": "am_adam", "name": "Adam", "lang": "en-us", "gender": "M"},
-                {"id": "bf_emma", "name": "Emma", "lang": "en-gb", "gender": "F"},
-                {"id": "bm_george", "name": "George", "lang": "en-gb", "gender": "M"},
-                {"id": "zf_xiaobei", "name": "Xiaobei", "lang": "zh", "gender": "F"},
-                {"id": "zm_yunjian", "name": "Yunjian", "lang": "zh", "gender": "M"},
-                {"id": "jf_alpha", "name": "Alpha", "lang": "ja", "gender": "F"},
-                {"id": "ff_siwis", "name": "Siwis", "lang": "fr", "gender": "F"},
-            ]
+            # Return all voices from the model (must stay in sync with ContentView.swift)
+            voices = sorted(
+                [{"id": k, "lang": k[:1], "gender": k[1:2].upper()}
+                 for k in kokoro.voices.keys()],
+                key=lambda v: v["id"],
+            )
             self._json_response(200, voices)
         else:
             self.send_error(404)

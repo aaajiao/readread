@@ -1,0 +1,57 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Build Commands
+
+```bash
+# Development: set up Python env + models in ~/.readread/, then build Swift
+./scripts/setup.sh
+swift build
+swift run ReadRead
+
+# Distribution: fully self-contained .app bundle (~508MB)
+./scripts/build-app.sh
+open build/ReadRead.app
+```
+
+Build cache lives in `build/cache/` (standalone Python, models). Delete it to force re-download.
+
+## Architecture
+
+ReadRead is a macOS menu bar TTS reader with two processes:
+
+**Swift app** (menu bar UI) → HTTP → **Python subprocess** (kokoro-onnx TTS)
+
+### Swift Side (Sources/ReadRead/)
+
+- `ReadReadApp.swift` — Entry point. AppDelegate creates NSStatusItem + FloatingPanel, starts TTS server.
+- `AppState.swift` — `@Observable @MainActor` state machine. Owns the reading pipeline: fetch URL → extract text → split into chunks → synthesize each chunk → play audio sequentially. Handles playback controls (play/pause/stop/skip).
+- `TTSEngine.swift` — Manages Python subprocess lifecycle. Resolves paths with fallback chain: app bundle Resources → `~/.readread/` → CWD. Discovers server port by polling a port file. All synthesis via HTTP POST to `127.0.0.1:{port}/synthesize`.
+- `WebExtractor.swift` — Fetches content via `https://defuddle.md/{url-without-protocol}`, parses YAML frontmatter, strips markdown to plain text. Also reads local .md/.txt files.
+- `ContentView.swift` — SwiftUI panel UI. Also defines the `Voice` model (list of available voices).
+- `FloatingPanel.swift` — NSPanel subclass: borderless, floating, non-activating, transparent background for SwiftUI material.
+- `AudioPlayerService.swift` — AVAudioPlayer wrapper using `CheckedContinuation` for async `playAndWait()`.
+
+### Python Side (tts_server/)
+
+- `tts_server.py` — HTTP server wrapping kokoro-onnx. Endpoints: `/health`, `/voices`, `/synthesize` (POST).
+  - English/Hindi/Italian/Portuguese use espeak for phonemization (handled by kokoro directly).
+  - Chinese/Japanese/Spanish/French use misaki G2P backends (loaded lazily), then pass phonemes to kokoro with `is_phonemes=True`.
+  - Splits text into sentences (max 200 chars) server-side to stay within the model's 510-token limit.
+
+### Key Data Flow
+
+1. User pastes URL → `WebExtractor.extractFromURL()` calls defuddle.md API
+2. `AppState.splitIntoChunks()` breaks text into ~200-char paragraphs
+3. For each chunk: `TTSEngine.synthesize()` POSTs JSON to Python server → receives WAV bytes
+4. `AudioPlayerService.playAndWait()` plays WAV, suspends until done, then next chunk
+
+## Important Conventions
+
+- **Voice lists are duplicated** in `ContentView.swift` and `tts_server.py` — keep them in sync when adding voices.
+- **Language detection** uses Apple's NaturalLanguage framework on actual text content (not defuddle metadata, which can be wrong).
+- **Path resolution** in TTSEngine checks app bundle first for self-contained distribution, falls back to `~/.readread/` for development.
+- **No external Swift dependencies** — only Apple frameworks (SwiftUI, AppKit, AVFoundation, NaturalLanguage).
+- **Swift 6 strict concurrency** — AppState, TTSEngine, AudioPlayerService are all `@MainActor`. Async suspension points (URLSession, Task.sleep, CheckedContinuation) keep the main thread unblocked.
+- `LSUIElement=true` in Info.plist hides the app from the Dock.

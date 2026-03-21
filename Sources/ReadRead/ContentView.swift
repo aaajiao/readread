@@ -268,17 +268,54 @@ struct Voice: Identifiable, Hashable {
     }
 
     static let all: [Voice] = [
+        // American English
         Voice(id: "af_heart", name: "Heart", language: "en-us", gender: "F"),
+        Voice(id: "af_alloy", name: "Alloy", language: "en-us", gender: "F"),
+        Voice(id: "af_aoede", name: "Aoede", language: "en-us", gender: "F"),
         Voice(id: "af_bella", name: "Bella", language: "en-us", gender: "F"),
-        Voice(id: "af_sarah", name: "Sarah", language: "en-us", gender: "F"),
+        Voice(id: "af_jessica", name: "Jessica", language: "en-us", gender: "F"),
+        Voice(id: "af_kore", name: "Kore", language: "en-us", gender: "F"),
         Voice(id: "af_nicole", name: "Nicole", language: "en-us", gender: "F"),
-        Voice(id: "am_michael", name: "Michael", language: "en-us", gender: "M"),
+        Voice(id: "af_nova", name: "Nova", language: "en-us", gender: "F"),
+        Voice(id: "af_river", name: "River", language: "en-us", gender: "F"),
+        Voice(id: "af_sarah", name: "Sarah", language: "en-us", gender: "F"),
+        Voice(id: "af_sky", name: "Sky", language: "en-us", gender: "F"),
         Voice(id: "am_adam", name: "Adam", language: "en-us", gender: "M"),
+        Voice(id: "am_echo", name: "Echo", language: "en-us", gender: "M"),
+        Voice(id: "am_eric", name: "Eric", language: "en-us", gender: "M"),
+        Voice(id: "am_fenrir", name: "Fenrir", language: "en-us", gender: "M"),
+        Voice(id: "am_liam", name: "Liam", language: "en-us", gender: "M"),
+        Voice(id: "am_michael", name: "Michael", language: "en-us", gender: "M"),
+        Voice(id: "am_onyx", name: "Onyx", language: "en-us", gender: "M"),
+        Voice(id: "am_puck", name: "Puck", language: "en-us", gender: "M"),
+        // British English
+        Voice(id: "bf_alice", name: "Alice", language: "en-gb", gender: "F"),
         Voice(id: "bf_emma", name: "Emma", language: "en-gb", gender: "F"),
+        Voice(id: "bf_isabella", name: "Isabella", language: "en-gb", gender: "F"),
+        Voice(id: "bf_lily", name: "Lily", language: "en-gb", gender: "F"),
+        Voice(id: "bm_daniel", name: "Daniel", language: "en-gb", gender: "M"),
+        Voice(id: "bm_fable", name: "Fable", language: "en-gb", gender: "M"),
         Voice(id: "bm_george", name: "George", language: "en-gb", gender: "M"),
-        Voice(id: "zf_xiaobei", name: "Xiaobei", language: "zh", gender: "F"),
-        Voice(id: "zm_yunjian", name: "Yunjian", language: "zh", gender: "M"),
+        Voice(id: "bm_lewis", name: "Lewis", language: "en-gb", gender: "M"),
+        // Chinese
+        Voice(id: "zf_xiaobei", name: "小北", language: "zh", gender: "F"),
+        Voice(id: "zf_xiaoni", name: "小妮", language: "zh", gender: "F"),
+        Voice(id: "zf_xiaoxiao", name: "小晓", language: "zh", gender: "F"),
+        Voice(id: "zf_xiaoyi", name: "小艺", language: "zh", gender: "F"),
+        Voice(id: "zm_yunjian", name: "云间", language: "zh", gender: "M"),
+        Voice(id: "zm_yunxi", name: "云希", language: "zh", gender: "M"),
+        Voice(id: "zm_yunxia", name: "云夏", language: "zh", gender: "M"),
+        Voice(id: "zm_yunyang", name: "云扬", language: "zh", gender: "M"),
+        // Japanese
         Voice(id: "jf_alpha", name: "Alpha", language: "ja", gender: "F"),
+        Voice(id: "jf_gongitsune", name: "Gongitsune", language: "ja", gender: "F"),
+        Voice(id: "jf_nezumi", name: "Nezumi", language: "ja", gender: "F"),
+        Voice(id: "jf_tebukuro", name: "Tebukuro", language: "ja", gender: "F"),
+        Voice(id: "jm_kumo", name: "Kumo", language: "ja", gender: "M"),
+        // French
         Voice(id: "ff_siwis", name: "Siwis", language: "fr", gender: "F"),
+        // Spanish
+        Voice(id: "ef_dora", name: "Dora", language: "es", gender: "F"),
+        Voice(id: "em_alex", name: "Alex", language: "es", gender: "M"),
     ]
 }
