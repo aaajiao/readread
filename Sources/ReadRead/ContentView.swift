@@ -294,21 +294,18 @@ struct ContentView: View {
 
     private var bottomBar: some View {
         HStack {
-            Menu {
-                Text("ReadRead v0.1.0")
-                Divider()
-                Button("Quit ReadRead") {
-                    NSApplication.shared.terminate(nil)
-                }
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-
             Spacer()
+
+            Text("v0.1.0")
+                .font(.caption2)
+                .foregroundStyle(.quaternary)
+
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
+            }
+            .buttonStyle(.borderless)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
