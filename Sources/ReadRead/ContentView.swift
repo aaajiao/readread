@@ -316,7 +316,7 @@ struct ContentView: View {
         HStack {
             Spacer()
 
-            Text("v0.1.0")
+            Text(appVersionLabel)
                 .font(.caption2)
                 .foregroundStyle(.quaternary)
 
@@ -329,6 +329,11 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    private var appVersionLabel: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        return "v\(version)"
     }
 
     // MARK: - Banners
