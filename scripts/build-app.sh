@@ -20,6 +20,11 @@ echo "[1/5] Building Swift binary (release)..."
 cd "$PROJECT_DIR"
 swift build -c release 2>&1 | tail -1
 cp .build/release/ReadRead "$APP_DIR/MacOS/ReadRead"
+# SwiftPM auto-generates ReadRead_ReadRead.bundle for the resources declared in
+# Package.swift. Bundle.module's accessor fatalErrors if it's missing, falling
+# back to a hardcoded dev path. Ship it next to the executable's resources so
+# Bundle.main.resourceURL finds it on every machine.
+cp -R .build/release/ReadRead_ReadRead.bundle "$APP_DIR/Resources/ReadRead_ReadRead.bundle"
 echo "  Done."
 
 # ── Step 2: Info.plist ───────────────────────────────────────────────
@@ -36,9 +41,9 @@ cat > "$APP_DIR/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.readread.app</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.1.1</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
