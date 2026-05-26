@@ -26,6 +26,9 @@ enum WebExtractorError: LocalizedError {
 
 enum WebExtractor {
 
+    /// Total number of fetch attempts before giving up (1 initial + retries).
+    static let maxAttempts = 3
+
     /// Fetch readable content from a URL via Defuddle API
     static func extractFromURL(_ url: URL) async throws -> ExtractedContent {
         // Build defuddle.md URL: strip protocol from original URL
@@ -41,11 +44,7 @@ enum WebExtractor {
             throw WebExtractorError.invalidURL
         }
 
-        let (data, response) = try await URLSession.shared.data(from: defuddleURL)
-
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
-            throw WebExtractorError.fetchFailed(httpResponse.statusCode)
-        }
+        let data = try await fetchWithRetry(from: defuddleURL)
 
         guard let markdown = String(data: data, encoding: .utf8), !markdown.isEmpty else {
             throw WebExtractorError.noContent
@@ -65,6 +64,70 @@ enum WebExtractor {
             domain: metadata["domain"] ?? url.host() ?? "",
             wordCount: Int(metadata["word_count"] ?? "0") ?? plainText.split(separator: " ").count
         )
+    }
+
+    // MARK: - Fetching
+
+    /// Fetch raw data from `url`, retrying transient failures with exponential backoff.
+    ///
+    /// `fetch` and `sleep` are injectable so the retry behavior can be tested
+    /// without real network access. Retries apply only to transient failures
+    /// (see ``isRetryable(error:)`` / ``isRetryable(statusCode:)``); deterministic
+    /// failures (4xx other than 429, decode errors) throw immediately.
+    static func fetchWithRetry(
+        from url: URL,
+        maxAttempts: Int = WebExtractor.maxAttempts,
+        sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        fetch: @Sendable (URL) async throws -> (Data, URLResponse) = {
+            try await URLSession.shared.data(from: $0)
+        }
+    ) async throws -> Data {
+        var attempt = 1
+        while true {
+            do {
+                let (data, response) = try await fetch(url)
+                if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                    if attempt < maxAttempts, isRetryable(statusCode: http.statusCode) {
+                        try await sleep(backoff(forAttempt: attempt))
+                        attempt += 1
+                        continue
+                    }
+                    throw WebExtractorError.fetchFailed(http.statusCode)
+                }
+                return data
+            } catch let error as WebExtractorError {
+                throw error  // already a final, non-retryable outcome
+            } catch {
+                if attempt < maxAttempts, isRetryable(error: error) {
+                    try await sleep(backoff(forAttempt: attempt))
+                    attempt += 1
+                    continue
+                }
+                throw error
+            }
+        }
+    }
+
+    /// Backoff before the retry following the given (1-based) attempt: 0.5s, 1s, 2s, ...
+    static func backoff(forAttempt attempt: Int) -> Duration {
+        .milliseconds(500 * (1 << (attempt - 1)))
+    }
+
+    /// HTTP status codes worth retrying: rate limiting (429) and server errors (5xx).
+    static func isRetryable(statusCode: Int) -> Bool {
+        statusCode == 429 || (500...599).contains(statusCode)
+    }
+
+    /// Network errors worth retrying: timeouts and connectivity blips.
+    static func isRetryable(error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut, .cannotConnectToHost, .networkConnectionLost,
+            .notConnectedToInternet, .dnsLookupFailed, .cannotFindHost:
+            return true
+        default:
+            return false
+        }
     }
 
     /// Read a local text or markdown file
@@ -101,7 +164,7 @@ enum WebExtractor {
 
     // MARK: - Parsing
 
-    private static func parseFrontmatter(_ content: String) -> (metadata: [String: String], body: String) {
+    static func parseFrontmatter(_ content: String) -> (metadata: [String: String], body: String) {
         guard content.hasPrefix("---\n") else {
             return ([:], content)
         }
@@ -131,7 +194,7 @@ enum WebExtractor {
         return (metadata, body)
     }
 
-    private static func stripMarkdown(_ markdown: String) -> String {
+    static func stripMarkdown(_ markdown: String) -> String {
         var text = markdown
 
         // Remove images
@@ -154,6 +217,12 @@ enum WebExtractor {
         text = text.replacingOccurrences(
             of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)
 
+        // Remove horizontal rules — must run before the bold/italic step below,
+        // otherwise whole-line `***`/`___` rules get consumed by the emphasis
+        // regexes and are never recognized as rules.
+        text = text.replacingOccurrences(
+            of: #"(?m)^[\-\*_]{3,}\s*$"#, with: "", options: .regularExpression)
+
         // Remove bold/italic
         text = text.replacingOccurrences(
             of: #"\*{1,3}(.+?)\*{1,3}"#, with: "$1", options: .regularExpression)
@@ -163,10 +232,6 @@ enum WebExtractor {
         // Remove blockquote markers
         text = text.replacingOccurrences(
             of: #"(?m)^>\s*"#, with: "", options: .regularExpression)
-
-        // Remove horizontal rules
-        text = text.replacingOccurrences(
-            of: #"(?m)^[\-\*_]{3,}\s*$"#, with: "", options: .regularExpression)
 
         // Remove unordered list markers
         text = text.replacingOccurrences(

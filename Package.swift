@@ -11,6 +11,11 @@ let package = Package(
             resources: [
                 .copy("Resources")
             ]
+        ),
+        .testTarget(
+            name: "ReadReadTests",
+            dependencies: ["ReadRead"],
+            path: "Tests/ReadReadTests"
         )
     ]
 )

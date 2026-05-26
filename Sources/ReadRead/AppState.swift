@@ -216,7 +216,7 @@ final class AppState {
         UserDefaults.standard.set(speed, forKey: "speed_\(selectedLanguage)")
     }
 
-    private func applyLanguagePreferences(for language: String) {
+    func applyLanguagePreferences(for language: String) {
         if let voice = UserDefaults.standard.string(forKey: "voice_\(language)") {
             selectedVoice = voice
         } else {
@@ -294,7 +294,7 @@ final class AppState {
         }
     }
 
-    private func splitIntoChunks(_ text: String, maxLength: Int = 200) -> [String] {
+    func splitIntoChunks(_ text: String, maxLength: Int = 200) -> [String] {
         let paragraphs = text.components(separatedBy: "\n\n")
         var chunks: [String] = []
         var current = ""
@@ -319,7 +319,7 @@ final class AppState {
         return chunks.isEmpty ? [text] : chunks
     }
 
-    private func detectLanguage(_ text: String) -> String {
+    func detectLanguage(_ text: String) -> String {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(String(text.prefix(1000)))
 
@@ -337,7 +337,7 @@ final class AppState {
         }
     }
 
-    private func mapLanguageCode(_ code: String) -> String {
+    func mapLanguageCode(_ code: String) -> String {
         let prefix = code.prefix(2)
         switch prefix {
         case "zh": return "zh"
@@ -352,7 +352,7 @@ final class AppState {
         }
     }
 
-    private func defaultVoice(for language: String) -> String {
+    func defaultVoice(for language: String) -> String {
         switch language {
         case "zh": return "zf_xiaobei"
         case "ja": return "jf_alpha"
