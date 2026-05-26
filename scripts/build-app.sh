@@ -41,9 +41,9 @@ cat > "$APP_DIR/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.readread.app</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>3</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.1</string>
+    <string>0.1.2</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
