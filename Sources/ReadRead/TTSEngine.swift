@@ -167,7 +167,7 @@ final class TTSEngine {
     // MARK: - Path Resolution
 
     /// Find a file: check app bundle Resources first, then fallback path(s)
-    private func resolve(bundle: String, fallback: String, extra: String? = nil) -> String {
+    func resolve(bundle: String, fallback: String, extra: String? = nil) -> String {
         let fm = FileManager.default
 
         // 1. Inside app bundle
@@ -187,7 +187,7 @@ final class TTSEngine {
     }
 
     /// Find a directory: check app bundle Resources first, then fallback
-    private func resolveDir(bundle: String, fallback: String) -> String {
+    func resolveDir(bundle: String, fallback: String) -> String {
         let fm = FileManager.default
 
         if let resources = Bundle.main.resourcePath {
