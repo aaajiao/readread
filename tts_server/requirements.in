@@ -1,0 +1,28 @@
+# ReadRead TTS server: top-level runtime dependencies (the lab-proven set, 2026-10-20).
+# Edit this file, then run ./scripts/lock-deps.sh to regenerate requirements.lock (hashed).
+# Target: CPython 3.12.15 (python-build-standalone 20261013) on macOS arm64.
+# Dev-only tools (pytest) are pinned in scripts/lib/versions.sh -> requirements-dev.txt.
+
+# Kokoro ONNX runtime. onnxruntime stays on 1.24.4, the version validated in the lab.
+kokoro-onnx==0.6.1
+onnxruntime==1.24.4
+numpy==2.4.3
+soundfile==0.13.1
+
+# Chinese front end: misaki ZHG2P(version="1.1") and its dictionaries, plus OpenCC t2s.
+# Not misaki[en]: that extra pulls phonemizer-fork, which clashes with phonemizer below.
+misaki[zh]==0.9.4
+jieba==0.42.1
+pypinyin==0.55.0
+pypinyin-dict==0.9.0
+cn2an==0.5.23
+opencc==1.4.2
+
+# English front end: misaki.en (spaCy tagger, trf=False) with the espeak fallback.
+# misaki.en imports num2words and spacy; misaki.espeak imports phonemizer and espeakng_loader.
+# en_core_web_sm must be installed: misaki.en would otherwise try to download it at runtime.
+spacy==3.8.16
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85
+num2words==0.5.14
+phonemizer==3.4.0
+espeakng-loader==0.2.4

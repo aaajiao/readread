@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-@main
+/// Started from main.swift (which handles --self-test first), not via @main.
 struct ReadReadApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
@@ -25,17 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupPanel()
         setupEventMonitor()
-
-        Task {
-            await appState.startTTSServer()
-        }
+        // The TTS server starts lazily: on the first read (prewarmed when a fetch
+        // or file open begins), and it shuts down again after 15 idle minutes.
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
         }
-        appState.ttsEngine.stop()
+        appState.shutdown()
     }
 
     private func setupStatusItem() {
@@ -49,18 +47,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The icon from Contents/Resources (copied there by build-app.sh). Under
+    /// `swift run` there is no bundle, so fall back to an SF Symbol. Never
+    /// Bundle.module: its accessor crashes when the dev .build path is absent.
     private func loadMenuBarIcon() -> NSImage {
-        let candidates = [
-            Bundle.main.resourceURL?.appendingPathComponent("menubar-icon@2x.png"),
-            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/menubar-icon@2x.png"),
-            Bundle.module.url(forResource: "menubar-icon@2x", withExtension: "png", subdirectory: "Resources"),
-        ]
-        for case let url? in candidates {
-            if let img = NSImage(contentsOf: url) {
-                return img
-            }
+        if let url = Bundle.main.url(forResource: "menubar-icon@2x", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            return image
         }
-        return NSImage(systemSymbolName: "headphones", accessibilityDescription: "ReadRead")!
+        let symbol = NSImage(systemSymbolName: "headphones", accessibilityDescription: "ReadRead") ?? NSImage()
+        symbol.isTemplate = true
+        return symbol
     }
 
     private func setupPanel() {

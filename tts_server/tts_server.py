@@ -1,241 +1,220 @@
 #!/usr/bin/env python3
-"""ReadRead TTS Server — local HTTP server wrapping kokoro-onnx."""
+"""ReadRead TTS server, HTTP API v2 (entry point; the code lives in readread_tts/).
 
-import argparse
-import io
-import json
+The app launches it as
+
+    <python> -I -B tts_server.py --models-dir <dir> [--preload zh|en|zh,en]
+
+with READREAD_TOKEN (64 hex characters) in the environment; READREAD_CACHE_DIR and
+READREAD_USER_LEXICON override where caches and the user lexicon live. stdout carries exactly one line,
+`READY {"port":..,"pid":..,"api":2,"loaded":[..]}` once the server listens on 127.0.0.1 and the
+preloaded routes are warm, or `FATAL {"message":..}` followed by exit status 3. Everything else,
+stray prints included, goes to stderr. The server exits when stdin reaches EOF (the app is gone) and
+within a second of SIGTERM or SIGINT, also in the middle of a synthesis.
+"""
+
+from __future__ import annotations
+
 import os
-import re
 import sys
-from http.server import HTTPServer, BaseHTTPRequestHandler
 
-import numpy as np
-import soundfile as sf
-from kokoro_onnx import Kokoro
+# The handshake keeps the real stdout; fd 1 is pointed at stderr so nothing else can reach it.
+_HANDSHAKE_FD = os.dup(1)
+os.dup2(2, 1)
 
-kokoro: Kokoro | None = None
-SAMPLE_RATE = 24000
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)  # -I leaves the script's directory off sys.path
 
-# Lazy-loaded G2P backends for non-English languages
-_g2p_cache: dict = {}
+import argparse  # noqa: E402
+import importlib.metadata  # noqa: E402
+import importlib.util  # noqa: E402
+import json  # noqa: E402
+import logging  # noqa: E402
+import re  # noqa: E402
+import shutil  # noqa: E402
+import signal  # noqa: E402
+import tempfile  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+import warnings  # noqa: E402
 
+log = logging.getLogger("readread")
 
-def get_g2p(lang: str):
-    """Get or create a misaki G2P instance for the given language."""
-    if lang in _g2p_cache:
-        return _g2p_cache[lang]
-
-    g2p = None
-    if lang == "zh":
-        from misaki.zh import ZHG2P
-        g2p = ZHG2P()
-    elif lang == "ja":
-        from misaki.ja import JAG2P
-        g2p = JAG2P()
-    elif lang == "es":
-        from misaki.es import ESG2P
-        g2p = ESG2P()
-    elif lang == "fr":
-        from misaki.fr import FRG2P
-        g2p = FRG2P()
-
-    if g2p is not None:
-        _g2p_cache[lang] = g2p
-    return g2p
+# Imported by the server or by the libraries it drives; checked up front for a clear FATAL message.
+REQUIRED_MODULES = ("numpy", "onnxruntime", "kokoro_onnx", "misaki", "phonemizer", "espeakng_loader", "spacy",
+                    "en_core_web_sm", "opencc", "num2words", "cn2an", "jieba", "pypinyin", "pypinyin_dict")
+_scratch: str | None = None
+_ready = False
 
 
-# Languages that espeak handles natively
-ESPEAK_LANGS = {"en-us", "en-gb", "hi", "it", "pt"}
-
-# Split text into sentences
-_SENTENCE_RE = re.compile(
-    r'(?<=[.!?。！？；\n])\s*|(?<=，)\s*(?=.{20,})'
-)
+def _emit(line: str) -> None:
+    os.write(_HANDSHAKE_FD, line.encode("ascii") + b"\n")
 
 
-def split_sentences(text: str, max_len: int = 200) -> list[str]:
-    """Split text into short segments safe for the model's 510-token limit."""
-    parts = _SENTENCE_RE.split(text)
-    segments: list[str] = []
-    current = ""
-
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        if len(current) + len(part) > max_len and current:
-            segments.append(current)
-            current = part
-        else:
-            current = f"{current} {part}".strip() if current else part
-
-    if current:
-        segments.append(current)
-
-    return segments if segments else [text]
+def _exit(status: int) -> None:
+    if _scratch:
+        shutil.rmtree(_scratch, ignore_errors=True)
+    try:
+        sys.stderr.flush()
+    except (OSError, ValueError):
+        pass
+    os._exit(status)
 
 
-def synthesize(text: str, voice: str, speed: float, lang: str):
-    """Synthesize text to audio, splitting into sentences to stay within token limits."""
-    sentences = split_sentences(text)
-
-    all_audio: list[np.ndarray] = []
-
-    for sentence in sentences:
-        if not sentence.strip():
-            continue
-        samples, sr = _synthesize_one(sentence, voice, speed, lang)
-        all_audio.append(samples)
-
-    if not all_audio:
-        return np.zeros(0, dtype=np.float32), SAMPLE_RATE
-
-    return np.concatenate(all_audio), SAMPLE_RATE
+def fatal(message: str) -> None:
+    log.error("FATAL: %s", message)
+    _emit("FATAL " + json.dumps({"message": message}, separators=(",", ":")))
+    _exit(3)
 
 
-def _synthesize_one(text: str, voice: str, speed: float, lang: str):
-    """Synthesize a single short segment."""
-    if lang in ESPEAK_LANGS:
-        return kokoro.create(text, voice=voice, speed=speed, lang=lang)
-    else:
-        g2p = get_g2p(lang)
-        if g2p is None:
-            return kokoro.create(text, voice=voice, speed=speed, lang=lang)
-
-        phonemes, _ = g2p(text)
-        return kokoro.create(
-            phonemes, voice=voice, speed=speed, lang=lang, is_phonemes=True
-        )
+class _Parser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        fatal(f"bad arguments: {message}")
 
 
-class TTSHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            self._json_response(200, {"status": "ok"})
-        elif self.path == "/voices":
-            # Return all voices from the model (must stay in sync with ContentView.swift)
-            voices = sorted(
-                [{"id": k, "lang": k[:1], "gender": k[1:2].upper()}
-                 for k in kokoro.voices.keys()],
-                key=lambda v: v["id"],
-            )
-            self._json_response(200, voices)
-        else:
-            self.send_error(404)
-
-    def do_POST(self):
-        if self.path != "/synthesize":
-            self.send_error(404)
-            return
-
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length))
-
-            text = body.get("text", "")
-            voice = body.get("voice", "af_heart")
-            speed = float(body.get("speed", 1.0))
-            lang = body.get("lang", "en-us")
-
-            if not text:
-                self.send_error(400, "No text provided")
-                return
-
-            samples, sample_rate = synthesize(text, voice, speed, lang)
-
-            buf = io.BytesIO()
-            sf.write(buf, samples, sample_rate, format="WAV")
-            audio_data = buf.getvalue()
-
-            self.send_response(200)
-            self.send_header("Content-Type", "audio/wav")
-            self.send_header("Content-Length", str(len(audio_data)))
-            self.end_headers()
-            self.wfile.write(audio_data)
-
-        except Exception as e:
-            msg = str(e)
-            print(f"Synthesis error: {msg}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            self._json_response(500, {"error": msg})
-
-    def _json_response(self, code, data):
-        payload = json.dumps(data).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, format, *args):
-        pass  # suppress per-request logging
-
-
-def find_model(model_dir: str) -> str:
-    for name in [
-        "kokoro-v1.0.fp16.onnx",
-        "kokoro-v1.0.onnx",
-        "kokoro-v1.0.int8.onnx",
-    ]:
-        path = os.path.join(model_dir, name)
-        if os.path.exists(path):
-            return path
-    return ""
-
-
-def main():
-    parser = argparse.ArgumentParser(description="ReadRead TTS Server")
-    parser.add_argument(
-        "--model-dir",
-        default=os.path.expanduser("~/.readread/models"),
-    )
-    parser.add_argument(
-        "--port-file",
-        default=os.path.expanduser("~/.readread/tts-port"),
-    )
-    parser.add_argument("--port", type=int, default=0)
+def _parse_args() -> argparse.Namespace:
+    parser = _Parser(prog="tts_server.py", description="ReadRead TTS server (HTTP API v2)")
+    parser.add_argument("--models-dir", required=True, help="directory holding the four Kokoro model files")
+    parser.add_argument("--preload", default="", help='routes to load before READY: "zh", "en" or "zh,en"')
     args = parser.parse_args()
+    routes = [r.strip() for r in args.preload.split(",") if r.strip()]
+    unknown = [r for r in routes if r not in ("zh", "en")]
+    if unknown:
+        fatal(f"bad arguments: unknown --preload route {unknown[0]!r} (expected zh, en or zh,en)")
+    args.preload = [r for r in ("zh", "en") if r in routes]
+    return args
 
-    model_path = find_model(args.model_dir)
-    if not model_path:
-        print(f"ERROR: No model file found in {args.model_dir}", file=sys.stderr)
-        sys.exit(1)
 
-    voices_path = os.path.join(args.model_dir, "voices-v1.0.bin")
-    if not os.path.exists(voices_path):
-        print(
-            f"ERROR: voices-v1.0.bin not found in {args.model_dir}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+def _on_signal(signum: int, _frame) -> None:
+    # Runs in the main thread, which only waits (serve_forever / join): exit at once, mid-synthesis too.
+    # Written directly, in the log's format, so a logging lock held by another thread cannot delay it.
+    now = time.time()
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)) + f".{int(now % 1 * 1000):03d}"
+    os.write(2, f"{stamp} INFO readread: received {signal.Signals(signum).name}, exiting\n".encode())
+    _exit(0)
 
-    print(f"Loading model: {os.path.basename(model_path)}", file=sys.stderr)
-    global kokoro
-    kokoro = Kokoro(model_path, voices_path)
-    print("Model loaded.", file=sys.stderr)
 
-    server = HTTPServer(("127.0.0.1", args.port), TTSHandler)
-    port = server.server_address[1]
+def _watch_stdin() -> None:
+    """The app keeps our stdin open for as long as it wants us; EOF means it is gone."""
+    try:
+        while os.read(0, 4096):
+            pass
+    except OSError as error:
+        log.warning("stdin watchdog off (%s)", error)
+        return
+    log.info("stdin closed, exiting")
+    _exit(0)
 
-    # Write port file so the Swift app can discover us
-    os.makedirs(os.path.dirname(args.port_file), exist_ok=True)
-    with open(args.port_file, "w") as f:
-        f.write(str(port))
 
-    print(f"TTS server listening on 127.0.0.1:{port}", file=sys.stderr)
+def _scratch_dir(cache_dir: str) -> str:
+    """Per-process temporary directory under the cache dir. phonemizer copies libespeak-ng into a fresh
+    temporary directory per backend and only deletes it on garbage collection, which os._exit skips;
+    directories left by processes that are gone are removed here."""
+    root = os.path.join(cache_dir, "tmp")
+    os.makedirs(root, exist_ok=True)
+    for name in os.listdir(root):
+        if name.isdigit() and int(name) != os.getpid() and not _alive(int(name)):
+            shutil.rmtree(os.path.join(root, name), ignore_errors=True)
+    path = os.path.join(root, str(os.getpid()))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def main() -> None:
+    global _scratch, _ready
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO,
+                        format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
+                        datefmt="%Y-%m-%d %H:%M:%S")
+    logging.captureWarnings(True)
+    warnings.filterwarnings("ignore", category=SyntaxWarning)  # jieba's regexes, when compiled from source
+
+    args = _parse_args()
+    token = os.environ.pop("READREAD_TOKEN", "")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", token):
+        fatal("READREAD_TOKEN must be set to 64 hexadecimal characters")
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
+    threading.Thread(target=_watch_stdin, name="stdin-watchdog", daemon=True).start()
+    log.info("ReadRead TTS server starting (api 2, pid %d, Python %s)", os.getpid(), sys.version.split()[0])
+
+    from readread_tts import engine as engine_module
+
+    models_dir = os.path.abspath(os.path.expanduser(args.models_dir))
+    problems = engine_module.check_models(models_dir)
+    if problems:
+        fatal("; ".join(problems))
+    missing = [m for m in REQUIRED_MODULES if importlib.util.find_spec(m) is None]
+    if missing:
+        fatal(f"missing Python packages: {', '.join(missing)} (run ./scripts/setup.sh)")
+    try:
+        importlib.metadata.distribution("en_core_web_sm")  # what spaCy checks before it would download
+    except importlib.metadata.PackageNotFoundError:
+        fatal("the spaCy model en_core_web_sm is installed without its metadata; reinstall it")
+
+    cache_dir = os.path.abspath(os.path.expanduser(
+        os.environ.get("READREAD_CACHE_DIR") or "~/Library/Caches/ReadRead"))
+    user_lexicon = os.path.abspath(os.path.expanduser(
+        os.environ.get("READREAD_USER_LEXICON") or "~/Library/Application Support/ReadRead/lexicon_zh.json"))
+    try:
+        from readread_tts import espeak
+
+        espeak.prepare(cache_dir)
+        _scratch = tempfile.tempdir = _scratch_dir(cache_dir)
+    except Exception as error:  # noqa: BLE001
+        fatal(f"cannot set up the cache directory {cache_dir}: {error}")
 
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+        from readread_tts.server import Server
+
+        engine = engine_module.Engine(models_dir, cache_dir, user_lexicon)
+        server = Server(engine, token)
+    except Exception as error:  # noqa: BLE001
+        fatal(f"cannot start the HTTP server: {type(error).__name__}: {error}")
+    log.info("listening on 127.0.0.1:%d; models %s; cache %s; user lexicon %s", server.port, models_dir,
+             cache_dir, user_lexicon)
+
+    failure: list[BaseException] = []
+
+    def preload() -> None:
         try:
-            os.remove(args.port_file)
-        except OSError:
-            pass
+            with engine.lock:
+                for route in args.preload:
+                    engine.load(route)
+        except BaseException as error:  # noqa: BLE001 - reported as FATAL by the main thread
+            log.exception("preload failed")
+            failure.append(error)
+
+    loader = threading.Thread(target=preload, name="preload", daemon=True)
+    loader.start()
+    while loader.is_alive():
+        loader.join(0.2)  # in short steps, so SIGTERM is handled during a long model load
+    if failure:
+        fatal(f"loading the models failed: {type(failure[0]).__name__}: {failure[0]}")
+
+    _emit("READY " + json.dumps({"port": server.port, "pid": os.getpid(), "api": 2, "loaded": engine.loaded()},
+                                separators=(",", ":")))
+    _ready = True
+    log.info("ready (loaded: %s)", ", ".join(engine.loaded()) or "nothing yet")
+    server.serve_forever(poll_interval=0.5)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException as error:  # noqa: BLE001 - before READY this is a FATAL, after it a crash
+        log.exception("unexpected error")
+        if _ready:
+            _exit(1)
+        fatal(f"{type(error).__name__}: {error}")

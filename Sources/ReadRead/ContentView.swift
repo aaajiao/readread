@@ -25,7 +25,7 @@ struct ContentView: View {
                 errorBanner(error)
             }
 
-            if case .error = appState.serverState {
+            if appState.errorNeedsSetup {
                 setupBanner
             }
 
@@ -51,7 +51,7 @@ struct ContentView: View {
             case .success(let url):
                 Task { await appState.openFile(url: url) }
             case .failure(let error):
-                appState.errorMessage = error.localizedDescription
+                appState.showError(error)
             }
         }
     }
@@ -282,9 +282,11 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)
 
-                Picker("", selection: $appState.selectedVoice) {
-                    ForEach(Voice.all) { voice in
-                        Text("\(voice.name) (\(voice.languageLabel))")
+                // Only voices of the text's language: the voice decides the
+                // pronunciation (ZH / EN-US / EN-GB).
+                Picker("Voice", selection: $appState.selectedVoice) {
+                    ForEach(appState.voicesForCurrentLanguage) { voice in
+                        Text(voice.pickerLabel)
                             .tag(voice.id)
                     }
                 }
@@ -314,6 +316,14 @@ struct ContentView: View {
 
     private var bottomBar: some View {
         HStack {
+            if appState.engineStatus == .starting {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Starting voice engine…")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
             Spacer()
 
             Text(appVersionLabel)
@@ -339,20 +349,37 @@ struct ContentView: View {
     // MARK: - Banners
 
     private func errorBanner(_ message: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-                .font(.caption)
-            Text(message)
-                .font(.caption)
-                .lineLimit(2)
-            Spacer()
-            Button {
-                appState.errorMessage = nil
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+                    .font(.caption)
+                // The full text, selectable so it can be copied into a bug report.
+                if Self.isLongMessage(message) {
+                    ScrollView {
+                        errorText(message)
+                    }
+                    .frame(height: 110)
+                } else {
+                    errorText(message)
+                }
+                Button {
+                    appState.clearError()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                }
+                .buttonStyle(.borderless)
+                .help("Dismiss")
             }
+            HStack(spacing: 14) {
+                Spacer()
+                Button("Show Log") { appState.showLog() }
+                    .help("Open the voice engine log")
+                Button("Retry") { appState.retry() }
+                    .help("Restart the voice engine if needed and continue")
+            }
+            .font(.caption)
             .buttonStyle(.borderless)
         }
         .padding(.horizontal)
@@ -360,12 +387,26 @@ struct ContentView: View {
         .background(.red.opacity(0.08))
     }
 
+    private func errorText(_ message: String) -> some View {
+        Text(message)
+            .font(.caption)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private static func isLongMessage(_ message: String) -> Bool {
+        message.count > 360 || message.filter(\.isNewline).count >= 6
+    }
+
     private var setupBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("TTS Setup Required")
                 .font(.caption)
                 .bold()
-            Text("Run: ./scripts/setup.sh")
+            Text(Bundle.main.bundleURL.pathExtension == "app"
+                 ? "Rebuild the app: ./scripts/build-app.sh"
+                 : "Run: ./scripts/setup.sh")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
@@ -379,73 +420,115 @@ struct ContentView: View {
 
 // MARK: - Voice Model
 
-struct Voice: Identifiable, Hashable {
+/// The accent a voice speaks with; also the G2P route on the server.
+enum VoiceAccent: String, Sendable {
+    case zh
+    case us
+    case uk
+
+    var label: String {
+        switch self {
+        case .zh: return "ZH"
+        case .us: return "EN-US"
+        case .uk: return "EN-GB"
+        }
+    }
+}
+
+struct Voice: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
-    let language: String
-    let gender: String
+    let language: SpeechLanguage
+    let accent: VoiceAccent
 
-    var languageLabel: String {
-        switch language {
-        case "en-us": return "EN"
-        case "en-gb": return "EN-GB"
-        case "zh": return "ZH"
-        case "ja": return "JA"
-        case "fr": return "FR"
-        case "es": return "ES"
-        default: return language.uppercased()
+    var accentLabel: String { accent.label }
+    var pickerLabel: String { "\(name) (\(accentLabel))" }
+
+    /// The server routes by id prefix: zf_/zm_ → Chinese, af_/am_ → US English,
+    /// bf_/bm_ → UK English.
+    static func route(forID id: String) -> (language: SpeechLanguage, accent: VoiceAccent)? {
+        switch id.prefix(3) {
+        case "zf_", "zm_": return (.zh, .zh)
+        case "af_", "am_": return (.en, .us)
+        case "bf_", "bm_": return (.en, .uk)
+        default: return nil
         }
     }
 
+    /// The single list of voices in the app (order = picker order).
     static let all: [Voice] = [
-        // American English
-        Voice(id: "af_heart", name: "Heart", language: "en-us", gender: "F"),
-        Voice(id: "af_alloy", name: "Alloy", language: "en-us", gender: "F"),
-        Voice(id: "af_aoede", name: "Aoede", language: "en-us", gender: "F"),
-        Voice(id: "af_bella", name: "Bella", language: "en-us", gender: "F"),
-        Voice(id: "af_jessica", name: "Jessica", language: "en-us", gender: "F"),
-        Voice(id: "af_kore", name: "Kore", language: "en-us", gender: "F"),
-        Voice(id: "af_nicole", name: "Nicole", language: "en-us", gender: "F"),
-        Voice(id: "af_nova", name: "Nova", language: "en-us", gender: "F"),
-        Voice(id: "af_river", name: "River", language: "en-us", gender: "F"),
-        Voice(id: "af_sarah", name: "Sarah", language: "en-us", gender: "F"),
-        Voice(id: "af_sky", name: "Sky", language: "en-us", gender: "F"),
-        Voice(id: "am_adam", name: "Adam", language: "en-us", gender: "M"),
-        Voice(id: "am_echo", name: "Echo", language: "en-us", gender: "M"),
-        Voice(id: "am_eric", name: "Eric", language: "en-us", gender: "M"),
-        Voice(id: "am_fenrir", name: "Fenrir", language: "en-us", gender: "M"),
-        Voice(id: "am_liam", name: "Liam", language: "en-us", gender: "M"),
-        Voice(id: "am_michael", name: "Michael", language: "en-us", gender: "M"),
-        Voice(id: "am_onyx", name: "Onyx", language: "en-us", gender: "M"),
-        Voice(id: "am_puck", name: "Puck", language: "en-us", gender: "M"),
-        // British English
-        Voice(id: "bf_alice", name: "Alice", language: "en-gb", gender: "F"),
-        Voice(id: "bf_emma", name: "Emma", language: "en-gb", gender: "F"),
-        Voice(id: "bf_isabella", name: "Isabella", language: "en-gb", gender: "F"),
-        Voice(id: "bf_lily", name: "Lily", language: "en-gb", gender: "F"),
-        Voice(id: "bm_daniel", name: "Daniel", language: "en-gb", gender: "M"),
-        Voice(id: "bm_fable", name: "Fable", language: "en-gb", gender: "M"),
-        Voice(id: "bm_george", name: "George", language: "en-gb", gender: "M"),
-        Voice(id: "bm_lewis", name: "Lewis", language: "en-gb", gender: "M"),
-        // Chinese
-        Voice(id: "zf_xiaobei", name: "小北", language: "zh", gender: "F"),
-        Voice(id: "zf_xiaoni", name: "小妮", language: "zh", gender: "F"),
-        Voice(id: "zf_xiaoxiao", name: "小晓", language: "zh", gender: "F"),
-        Voice(id: "zf_xiaoyi", name: "小艺", language: "zh", gender: "F"),
-        Voice(id: "zm_yunjian", name: "云间", language: "zh", gender: "M"),
-        Voice(id: "zm_yunxi", name: "云希", language: "zh", gender: "M"),
-        Voice(id: "zm_yunxia", name: "云夏", language: "zh", gender: "M"),
-        Voice(id: "zm_yunyang", name: "云扬", language: "zh", gender: "M"),
-        // Japanese
-        Voice(id: "jf_alpha", name: "Alpha", language: "ja", gender: "F"),
-        Voice(id: "jf_gongitsune", name: "Gongitsune", language: "ja", gender: "F"),
-        Voice(id: "jf_nezumi", name: "Nezumi", language: "ja", gender: "F"),
-        Voice(id: "jf_tebukuro", name: "Tebukuro", language: "ja", gender: "F"),
-        Voice(id: "jm_kumo", name: "Kumo", language: "ja", gender: "M"),
-        // French
-        Voice(id: "ff_siwis", name: "Siwis", language: "fr", gender: "F"),
-        // Spanish
-        Voice(id: "ef_dora", name: "Dora", language: "es", gender: "F"),
-        Voice(id: "em_alex", name: "Alex", language: "es", gender: "M"),
+        // Chinese (Kokoro v1.1-zh)
+        zh("zf_001", "女声 001"),
+        zh("zf_032", "女声 032"),
+        zh("zm_009", "男声 009"),
+        zh("zm_055", "男声 055"),
+        // American English (Kokoro v1.0)
+        us("af_heart", "Heart"),
+        us("af_alloy", "Alloy"),
+        us("af_aoede", "Aoede"),
+        us("af_bella", "Bella"),
+        us("af_jessica", "Jessica"),
+        us("af_kore", "Kore"),
+        us("af_nicole", "Nicole"),
+        us("af_nova", "Nova"),
+        us("af_river", "River"),
+        us("af_sarah", "Sarah"),
+        us("af_sky", "Sky"),
+        us("am_adam", "Adam"),
+        us("am_echo", "Echo"),
+        us("am_eric", "Eric"),
+        us("am_fenrir", "Fenrir"),
+        us("am_liam", "Liam"),
+        us("am_michael", "Michael"),
+        us("am_onyx", "Onyx"),
+        us("am_puck", "Puck"),
+        // British English (Kokoro v1.0)
+        uk("bf_alice", "Alice"),
+        uk("bf_emma", "Emma"),
+        uk("bf_isabella", "Isabella"),
+        uk("bf_lily", "Lily"),
+        uk("bm_daniel", "Daniel"),
+        uk("bm_fable", "Fable"),
+        uk("bm_george", "George"),
+        uk("bm_lewis", "Lewis"),
     ]
+
+    static let defaultVoiceIDs: [SpeechLanguage: String] = [.zh: "zf_001", .en: "af_heart"]
+
+    static func voices(for language: SpeechLanguage) -> [Voice] {
+        all.filter { $0.language == language }
+    }
+
+    static func voice(id: String) -> Voice? {
+        all.first { $0.id == id }
+    }
+
+    /// The voice with this id, only if it reads `language`.
+    static func voice(id: String, language: SpeechLanguage) -> Voice? {
+        guard let voice = voice(id: id), voice.language == language else { return nil }
+        return voice
+    }
+
+    static func defaultVoice(for language: SpeechLanguage) -> Voice {
+        defaultVoiceIDs[language].flatMap { voice(id: $0) } ?? voices(for: language)[0]
+    }
+
+    /// Catalog voices that the server's `GET /voices` (`{"zh": […], "en": […]}`)
+    /// does not list under their own language. Must be empty: `--self-test`, and
+    /// with it the build's smoke test, fails otherwise.
+    static func missing(from serverVoices: [String: [String]], in catalog: [Voice] = all) -> [Voice] {
+        catalog.filter { !(serverVoices[$0.language.rawValue] ?? []).contains($0.id) }
+    }
+
+    private static func zh(_ id: String, _ name: String) -> Voice {
+        Voice(id: id, name: name, language: .zh, accent: .zh)
+    }
+
+    private static func us(_ id: String, _ name: String) -> Voice {
+        Voice(id: id, name: name, language: .en, accent: .us)
+    }
+
+    private static func uk(_ id: String, _ name: String) -> Voice {
+        Voice(id: id, name: name, language: .en, accent: .uk)
+    }
 }

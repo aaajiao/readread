@@ -1,0 +1,542 @@
+{
+ "source": "ReadRead upgrade lab, frontend_probes.json rows with pipeline kokoro11zh-misaki (2026-10-20); sentences from the lab's texts.py; number pinyin = the lab's reading with 十一月 fixed to shi2 yi1 yue4",
+ "vocab_v1.1-zh": " !\"(),./12345:;?AIOQRSTWYabcdefhijklmnopqrstuvwxyzæçðøŋœɐɑɒɔɕɖəɛɜɟɡɣɨɪɯɰɲɳɴɸɹɽɾʁʂʃʈʊʋʌʎʒʔʝʣʤʥʦʧʨʰʲˈˌː̃βθχᵊᵝᵻ—“”…ㄅㄆㄇㄈㄉㄊㄋㄌㄍㄎㄏㄐㄑㄒㄓㄔㄕㄖㄗㄘㄙㄚㄛㄜㄝㄞㄟㄠㄡㄢㄣㄤㄥㄦㄧㄨㄩㄭ万中为云元十压又外应我文月王瓮用穵要言阳阴",
+ "probes": [
+  {
+   "text_id": "zh_main",
+   "sentence_no": 3,
+   "sentence": "银行行长在接受采访时说：“我们会重复检查每一笔交易，觉得没有问题再放行。”",
+   "kind": "polyphone",
+   "probe": "银行",
+   "expected": "yin2 hang2"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 3,
+   "sentence": "银行行长在接受采访时说：“我们会重复检查每一笔交易，觉得没有问题再放行。”",
+   "kind": "polyphone",
+   "probe": "行长",
+   "expected": "hang2 zhang3"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 3,
+   "sentence": "银行行长在接受采访时说：“我们会重复检查每一笔交易，觉得没有问题再放行。”",
+   "kind": "polyphone",
+   "probe": "放行",
+   "expected": "fang4 xing2"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 3,
+   "sentence": "银行行长在接受采访时说：“我们会重复检查每一笔交易，觉得没有问题再放行。”",
+   "kind": "polyphone",
+   "probe": "重复",
+   "expected": "chong2 fu4"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 7,
+   "sentence": "他睡觉前总喜欢听一段音乐，然后把明天要做的事情在脑子里重新过一遍，直到困意慢慢地涌上来。",
+   "kind": "polyphone",
+   "probe": "重新",
+   "expected": "chong2 xin1"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 3,
+   "sentence": "银行行长在接受采访时说：“我们会重复检查每一笔交易，觉得没有问题再放行。”",
+   "kind": "polyphone",
+   "probe": "觉得",
+   "expected": "jue2 de5"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 7,
+   "sentence": "他睡觉前总喜欢听一段音乐，然后把明天要做的事情在脑子里重新过一遍，直到困意慢慢地涌上来。",
+   "kind": "polyphone",
+   "probe": "睡觉",
+   "expected": "shui4 jiao4"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 7,
+   "sentence": "他睡觉前总喜欢听一段音乐，然后把明天要做的事情在脑子里重新过一遍，直到困意慢慢地涌上来。",
+   "kind": "polyphone",
+   "probe": "音乐",
+   "expected": "yin1 yue4"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 2,
+   "sentence": "据报道，这款手机一周内的销量增长了50%，总销售额超过3.5亿元。",
+   "kind": "polyphone",
+   "probe": "销量",
+   "expected": "xiao1 liang4"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 2,
+   "sentence": "据报道，这款手机一周内的销量增长了50%，总销售额超过3.5亿元。",
+   "kind": "polyphone",
+   "probe": "增长了",
+   "expected": "zeng1 zhang3 le5"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 2,
+   "sentence": "銀行行長說，他覺得音樂和睡覺一樣重要，而且不想重複同樣的錯誤。",
+   "kind": "polyphone",
+   "probe": "銀行",
+   "expected": "yin2 hang2"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 2,
+   "sentence": "銀行行長說，他覺得音樂和睡覺一樣重要，而且不想重複同樣的錯誤。",
+   "kind": "polyphone",
+   "probe": "行長",
+   "expected": "hang2 zhang3"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 2,
+   "sentence": "銀行行長說，他覺得音樂和睡覺一樣重要，而且不想重複同樣的錯誤。",
+   "kind": "polyphone",
+   "probe": "覺得",
+   "expected": "jue2 de5"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 2,
+   "sentence": "銀行行長說，他覺得音樂和睡覺一樣重要，而且不想重複同樣的錯誤。",
+   "kind": "polyphone",
+   "probe": "音樂",
+   "expected": "yin1 yue4"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 2,
+   "sentence": "銀行行長說，他覺得音樂和睡覺一樣重要，而且不想重複同樣的錯誤。",
+   "kind": "polyphone",
+   "probe": "睡覺",
+   "expected": "shui4 jiao4"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 2,
+   "sentence": "銀行行長說，他覺得音樂和睡覺一樣重要，而且不想重複同樣的錯誤。",
+   "kind": "polyphone",
+   "probe": "重複",
+   "expected": "chong2 fu4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 3,
+   "sentence": "根据一项2025年的调查，中国网民平均每天使用手机的时间超过5个小时。",
+   "kind": "polyphone",
+   "probe": "调查",
+   "expected": "diao4 cha2"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 4,
+   "sentence": "与此同时，长时间盯着屏幕也带来了视力下降、睡眠不足等问题。",
+   "kind": "polyphone",
+   "probe": "长时间",
+   "expected": "chang2 shi2 jian1"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 4,
+   "sentence": "与此同时，长时间盯着屏幕也带来了视力下降、睡眠不足等问题。",
+   "kind": "polyphone",
+   "probe": "盯着",
+   "expected": "ding1 zhe5"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 5,
+   "sentence": "于是，“用耳朵阅读”逐渐流行起来。",
+   "kind": "polyphone",
+   "probe": "流行",
+   "expected": "liu2 xing2"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 7,
+   "sentence": "早期的合成声音生硬、机械，听久了很容易疲劳；而今天的神经网络模型已经能够模仿真人的语调和停顿。",
+   "kind": "polyphone",
+   "probe": "语调",
+   "expected": "yu3 diao4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 8,
+   "sentence": "不过，中文语音合成仍然面临一些独特的挑战，比如多音字：“长大”的“长”和“长城”的“长”读音并不一样。",
+   "kind": "polyphone",
+   "probe": "长大",
+   "expected": "zhang3 da4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 8,
+   "sentence": "不过，中文语音合成仍然面临一些独特的挑战，比如多音字：“长大”的“长”和“长城”的“长”读音并不一样。",
+   "kind": "polyphone",
+   "probe": "长城",
+   "expected": "chang2 cheng2"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 9,
+   "sentence": "他还说，借来的书一定要按时还回去，这样大家才能了解彼此的需要。",
+   "kind": "polyphone",
+   "probe": "还说",
+   "expected": "hai2 shuo1"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 9,
+   "sentence": "他还说，借来的书一定要按时还回去，这样大家才能了解彼此的需要。",
+   "kind": "polyphone",
+   "probe": "还回去",
+   "expected": "huan2 hui2 qu4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 9,
+   "sentence": "他还说，借来的书一定要按时还回去，这样大家才能了解彼此的需要。",
+   "kind": "polyphone",
+   "probe": "了解",
+   "expected": "liao3 jie3"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 11,
+   "sentence": "你得多听几遍，才能得到真正的答案。",
+   "kind": "polyphone",
+   "probe": "得到",
+   "expected": "de2 dao4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 12,
+   "sentence": "只有把这些细节都处理好，听众才会觉得声音自然、可信。",
+   "kind": "polyphone",
+   "probe": "都 (in 都处理好)",
+   "expected": "dou1"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 2,
+   "sentence": "据报道，这款手机一周内的销量增长了50%，总销售额超过3.5亿元。",
+   "kind": "sandhi",
+   "probe": "一周",
+   "expected": "yi4 zhou1"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 3,
+   "sentence": "银行行长在接受采访时说：“我们会重复检查每一笔交易，觉得没有问题再放行。”",
+   "kind": "sandhi",
+   "probe": "一笔",
+   "expected": "yi4 bi3"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 7,
+   "sentence": "他睡觉前总喜欢听一段音乐，然后把明天要做的事情在脑子里重新过一遍，直到困意慢慢地涌上来。",
+   "kind": "sandhi",
+   "probe": "一段",
+   "expected": "yi2 duan4"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 7,
+   "sentence": "他睡觉前总喜欢听一段音乐，然后把明天要做的事情在脑子里重新过一遍，直到困意慢慢地涌上来。",
+   "kind": "sandhi",
+   "probe": "一遍",
+   "expected": "yi2 bian4"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 1,
+   "sentence": "這是一段繁體中文。",
+   "kind": "sandhi",
+   "probe": "一段",
+   "expected": "yi2 duan4"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 2,
+   "sentence": "銀行行長說，他覺得音樂和睡覺一樣重要，而且不想重複同樣的錯誤。",
+   "kind": "sandhi",
+   "probe": "一樣",
+   "expected": "yi2 yang4"
+  },
+  {
+   "text_id": "zh_hant",
+   "sentence_no": 2,
+   "sentence": "銀行行長說，他覺得音樂和睡覺一樣重要，而且不想重複同樣的錯誤。",
+   "kind": "sandhi",
+   "probe": "不想",
+   "expected": "bu4 xiang3"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 2,
+   "sentence": "早上醒来，很多人做的第一件事就是打开手机，浏览新闻、查看天气，或者回复工作群里的消息。",
+   "kind": "sandhi",
+   "probe": "第一件",
+   "expected": "di4 yi1 jian4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 3,
+   "sentence": "根据一项2025年的调查，中国网民平均每天使用手机的时间超过5个小时。",
+   "kind": "sandhi",
+   "probe": "一项",
+   "expected": "yi2 xiang4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 8,
+   "sentence": "不过，中文语音合成仍然面临一些独特的挑战，比如多音字：“长大”的“长”和“长城”的“长”读音并不一样。",
+   "kind": "sandhi",
+   "probe": "一些",
+   "expected": "yi4 xie1"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 8,
+   "sentence": "不过，中文语音合成仍然面临一些独特的挑战，比如多音字：“长大”的“长”和“长城”的“长”读音并不一样。",
+   "kind": "sandhi",
+   "probe": "不过",
+   "expected": "bu2 guo4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 4,
+   "sentence": "与此同时，长时间盯着屏幕也带来了视力下降、睡眠不足等问题。",
+   "kind": "sandhi",
+   "probe": "不足",
+   "expected": "bu4 zu2"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 8,
+   "sentence": "不过，中文语音合成仍然面临一些独特的挑战，比如多音字：“长大”的“长”和“长城”的“长”读音并不一样。",
+   "kind": "sandhi",
+   "probe": "不一样",
+   "expected": "bu4 yi2 yang4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 9,
+   "sentence": "他还说，借来的书一定要按时还回去，这样大家才能了解彼此的需要。",
+   "kind": "sandhi",
+   "probe": "一定",
+   "expected": "yi2 ding4"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 11,
+   "sentence": "你得多听几遍，才能得到真正的答案。",
+   "kind": "sandhi",
+   "probe": "你得",
+   "expected": "ni2 dei3"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 12,
+   "sentence": "只有把这些细节都处理好，听众才会觉得声音自然、可信。",
+   "kind": "sandhi",
+   "probe": "只有",
+   "expected": "zhi2 you3"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 1,
+   "sentence": "2026年10月20日，苹果公司发布了新款 iPhone 17 Pro，起售价为¥7999。",
+   "kind": "number",
+   "probe": "¥7999",
+   "accepted": [
+    "七千九百九十九元",
+    "人民币七千九百九十九元"
+   ],
+   "expected_pinyin": "qi1 qian1 jiu3 bai3 jiu3 shi2 jiu3 yuan2",
+   "left": "起售价为",
+   "right": ""
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 2,
+   "sentence": "据报道，这款手机一周内的销量增长了50%，总销售额超过3.5亿元。",
+   "kind": "number",
+   "probe": "50%",
+   "accepted": [
+    "百分之五十"
+   ],
+   "expected_pinyin": "bai3 fen1 zhi1 wu3 shi2",
+   "left": "增长了",
+   "right": "总销售额"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 2,
+   "sentence": "据报道，这款手机一周内的销量增长了50%，总销售额超过3.5亿元。",
+   "kind": "number",
+   "probe": "3.5亿元",
+   "accepted": [
+    "三点五亿元"
+   ],
+   "expected_pinyin": "san1 dian3 wu3 yi4 yuan2",
+   "left": "超过",
+   "right": ""
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 1,
+   "sentence": "2026年10月20日，苹果公司发布了新款 iPhone 17 Pro，起售价为¥7999。",
+   "kind": "number",
+   "probe": "2026年10月20日",
+   "accepted": [
+    "二零二六年十月二十日"
+   ],
+   "expected_pinyin": "er4 ling2 er4 liu4 nian2 shi2 yue4 er4 shi2 ri4",
+   "left": "",
+   "right": "苹果公司"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 5,
+   "sentence": "会议定于2026-11-05上午10:30召开，报名请拨打010-12345678。",
+   "kind": "number",
+   "probe": "2026-11-05",
+   "accepted": [
+    "二零二六年十一月五日",
+    "二零二六年十一月零五日"
+   ],
+   "expected_pinyin": "er4 ling2 er4 liu4 nian2 shi2 yi1 yue4 wu3 ri4",
+   "left": "会议定于",
+   "right": "上午"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 5,
+   "sentence": "会议定于2026-11-05上午10:30召开，报名请拨打010-12345678。",
+   "kind": "number",
+   "probe": "10:30",
+   "accepted": [
+    "十点半",
+    "十点三十分",
+    "十点三十"
+   ],
+   "expected_pinyin": "shi2 dian3 ban4",
+   "left": "上午",
+   "right": "召开"
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 5,
+   "sentence": "会议定于2026-11-05上午10:30召开，报名请拨打010-12345678。",
+   "kind": "number",
+   "probe": "010-12345678",
+   "accepted": [
+    "零幺零幺二三四五六七八",
+    "零一零一二三四五六七八"
+   ],
+   "expected_pinyin": "ling2 yao1 ling2 yao1 er4 san1 si4 wu3 liu4 qi1 ba1",
+   "left": "拨打",
+   "right": ""
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 3,
+   "sentence": "根据一项2025年的调查，中国网民平均每天使用手机的时间超过5个小时。",
+   "kind": "number",
+   "probe": "2025年",
+   "accepted": [
+    "二零二五年"
+   ],
+   "expected_pinyin": "er4 ling2 er4 wu3 nian2",
+   "left": "一项",
+   "right": "的调查"
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 3,
+   "sentence": "根据一项2025年的调查，中国网民平均每天使用手机的时间超过5个小时。",
+   "kind": "number",
+   "probe": "5个小时",
+   "accepted": [
+    "五个小时"
+   ],
+   "expected_pinyin": "wu3 ge5 xiao3 shi2",
+   "left": "超过",
+   "right": ""
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 1,
+   "sentence": "2026年10月20日，苹果公司发布了新款 iPhone 17 Pro，起售价为¥7999。",
+   "kind": "english",
+   "probe": "iPhone 17 Pro",
+   "words": [
+    "iPhone",
+    "Pro"
+   ]
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 4,
+   "sentence": "很多开发者已经在 GitHub 上分享了基于 ChatGPT API 的应用。",
+   "kind": "english",
+   "probe": "GitHub",
+   "words": [
+    "GitHub"
+   ]
+  },
+  {
+   "text_id": "zh_main",
+   "sentence_no": 4,
+   "sentence": "很多开发者已经在 GitHub 上分享了基于 ChatGPT API 的应用。",
+   "kind": "english",
+   "probe": "ChatGPT API",
+   "words": [
+    "ChatGPT",
+    "API"
+   ]
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 10,
+   "sentence": "再比如中英文混排：一篇讲 Python 编程的文章里，可能同时出现 list、dictionary 和“列表”“字典”。",
+   "kind": "english",
+   "probe": "Python",
+   "words": [
+    "Python"
+   ]
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 10,
+   "sentence": "再比如中英文混排：一篇讲 Python 编程的文章里，可能同时出现 list、dictionary 和“列表”“字典”。",
+   "kind": "english",
+   "probe": "list",
+   "words": [
+    "list"
+   ]
+  },
+  {
+   "text_id": "zh_long",
+   "sentence_no": 10,
+   "sentence": "再比如中英文混排：一篇讲 Python 编程的文章里，可能同时出现 list、dictionary 和“列表”“字典”。",
+   "kind": "english",
+   "probe": "dictionary",
+   "words": [
+    "dictionary"
+   ]
+  }
+ ]
+}

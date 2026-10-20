@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "entries": [
+    {"text": "行行长", "pinyin": "hang2 hang2 zhang3",
+     "note": "银行行长: misaki makes the second 行 a neutral-tone reduplication (hang5)"},
+    {"text": "长时间", "pinyin": "chang2 shi2 jian1",
+     "before": "(?<![队班组部局校厂处科院站市省县镇村团营连排军师馆社家船机店酋首兄学署司州区乡事成生增助擅])",
+     "note": "misaki reads zhang3; not after a title (队长时间观念) or 增长/成长/生长/擅长"},
+    {"text": "还回去", "pinyin": "huan2 hui2 qu4",
+     "before": "(按时|及时|准时|按期|如期|要|得|必须|应该|应当|记得|赶紧|赶快|马上|立刻|尽快|不|没|没有|把.{1,12})",
+     "note": "giving something back; 你还回去吗 keeps hai2"},
+
+    {"text": "得", "pinyin": "dei3", "before": "(你|我|他|她|们|大家|就|都|也|总|非|必须)",
+     "after": "(?!到|了(?!解)|的|出(?![去来门])|知(?!道)|分(?![享析开清辨配担])|益|奖|救|手(?!术)|逞|病|胜|意(?!识)|罪|名|宠|失|当(?!心)|体(?![谅会验])|力|空|劲|闲|主(?!动)|过(?![来去]))[一-鿿]",
+     "note": "must (dei3) before a verb: 你得多听几遍 -> ni2 dei3 (3-3 sandhi is redone); 得到, 得了, 得病, ... keep de2"},
+    {"text": "得", "pinyin": "dei3", "before": "还",
+     "after": "(?!到|了(?!解)|的|出(?![去来门])|知(?!道)|分(?![享析开清辨配担])|益|奖|救|手(?!术)|逞|病|胜|意(?!识)|罪|名|宠|失|当(?!心)|体(?![谅会验])|力|空|劲|闲|主(?!动)|过(?![来去])|清|起)[一-鿿]",
+     "note": "还得 = still have to; 还得清/还得起 (can repay) keep misaki's reading"},
+    {"text": "得了", "pinyin": "de2 le5", "before": "(你|我|他|她|它|们|谁|人)", "after": "(?!解)",
+     "note": "他得了冠军, 你得了吧: obtained (de2), not the neutral complement"},
+
+    {"text": "一", "pinyin": "yi1", "before": "[零〇一二三四五六七八九十百千万亿两]", "after": "(?![百千万亿])",
+     "note": "一 inside a number keeps tone 1: 十一月, 二十一, 一百零一, 万一"},
+    {"text": "一", "pinyin": "yi1", "after": "[零〇一二三四五六七八九]",
+     "note": "digit-by-digit numbers and years: 一九九一年"},
+    {"text": "一", "pinyin": "yi4", "before": "(?<!十)", "after": "[百千]",
+     "note": "一百, 一千, also inside a number (一千一百: misaki reads yi1 yi1)"},
+    {"text": "一", "pinyin": "yi2", "before": "(?<!十)", "after": "[万亿]", "note": "一万, 一亿"},
+    {"text": "一", "pinyin": "yi1", "after": "点(?:[零〇一二三四五六七八九]+(?!点)|半|钟|整|[零〇一二三四五六七八九十]+分)",
+     "note": "decimals and clock times: 一点五倍, 一点半; 一点一点地 keeps sandhi"},
+    {"text": "一", "pinyin": "yi1", "before": "[零〇一二三四五六七八九十两]点", "after": "(?![刻点])",
+     "note": "after a decimal point: 三点一四; 十点一刻 and 一点一点 keep sandhi"},
+    {"text": "一月", "pinyin": "yi1 yue4", "note": "January"},
+    {"text": "一", "pinyin": "yi1", "before": "月", "after": "[日号]", "note": "十月一日, 五月一号"},
+
+    {"text": "过", "pinyin": "guo4",
+     "before": "(重新|再|又|先|都|要|得|也|就|还|多|快|好好|仔细|认真|从头|全部)", "after": "[一两几]?[遍下次趟回]",
+     "note": "重新过一遍: to go over (guo4), not the aspect marker"}
+  ]
+}

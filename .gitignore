@@ -1,5 +1,19 @@
 .DS_Store
 Icon?
+
+# Swift / build outputs (build/ also holds build/cache: downloads, models, Python runtimes)
 .build/
 build/
 .swiftpm/
+
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local Python virtual environments (the dev env itself lives in $READREAD_HOME, outside the repo)
+.venv/
+venv/
+
+# Local Claude Code settings
+.claude/settings.local.json
