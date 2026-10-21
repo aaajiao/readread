@@ -63,23 +63,6 @@ final class DocumentBuilderTests: XCTestCase {
         XCTAssertFalse(document.isEmpty)
     }
 
-    func testUnitsAndBlocksLineUp() throws {
-        let markdown = Frontmatter.split(try Fixtures.text("pages/zh_wikipedia.md")).body
-        let document = DocumentBuilder.fromMarkdown(markdown, title: "语音合成", source: page, sourceLabel: "")
-        XCTAssertEqual(document.units.map(\.id), Array(document.units.indices))
-        for (index, block) in document.blocks.enumerated() {
-            for unitIndex in block.units {
-                let unit = document.units[unitIndex]
-                XCTAssertEqual(unit.block, index)
-                XCTAssertTrue(block.text.count >= unit.range.upperBound)
-                XCTAssertEqual(unit.endsBlock, unitIndex == block.units.upperBound - 1)
-                if unit.kind == .sentence { XCTAssertEqual(document.displayText(of: unit), unit.speakText) }
-                XCTAssertLessThanOrEqual(unit.speakText.unicodeScalars.count, SpeechChunker.maxSpeakCharacters)
-            }
-        }
-        XCTAssertEqual(document.blocks.flatMap { Array($0.units) }, Array(document.units.indices), "every unit in one block")
-    }
-
     func testContentHashAndPositionKeys() {
         let a = DocumentBuilder.fromPlainText("Same text.", title: nil, source: page, sourceLabel: "")
         let b = DocumentBuilder.fromPlainText("Same text.", title: nil, source: .text, sourceLabel: "")

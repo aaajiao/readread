@@ -63,7 +63,7 @@ final class TTSService: SpeechSynthesizer {
         case .stopped, .crashed: return .idle
         case .starting: return .starting
         case .ready: return .ready
-        case .failed: return .failed(server.lastError?.errorDescription ?? "TTS server failed")
+        case .failed: return .failed(server.lastError?.errorDescription ?? String(localized: "TTS server failed"))
         }
     }
 

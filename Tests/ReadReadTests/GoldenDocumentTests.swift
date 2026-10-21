@@ -10,8 +10,13 @@ final class GoldenDocumentTests: XCTestCase {
         ("pages/en_wikipedia.md", "https://en.wikipedia.org/wiki/Text_to_speech"),
         ("pages/zh_wikipedia.md", "https://zh.wikipedia.org/wiki/语音合成"),
         ("pages/hn.md", "https://news.ycombinator.com/item?id=1"),
+        ("pages/zh_tech_blog.md", "https://blog.example.com/2024/10/menubar-reader"),
+        ("pages/en_article.md", "https://journal.example.org/talking-machines"),
     ]
-    private static let files = ["text/en_crlf.txt", "text/en_hardwrap.txt", "text/zh_novel_singlenl.txt", "encodings/big5_long.txt"]
+    private static let files = [
+        "text/en_crlf.txt", "text/en_hardwrap.txt", "text/zh_novel_singlenl.txt", "encodings/big5_long.txt",
+        "text/zh_dialogue.txt", "text/en_notes.txt",
+    ]
 
     private var updating: Bool { ProcessInfo.processInfo.environment["READREAD_UPDATE_SNAPSHOTS"] == "1" }
 

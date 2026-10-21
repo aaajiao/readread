@@ -1,0 +1,96 @@
+title: 用 Swift 写一个菜单栏朗读器：从文字到声音
+source: blog.example.com
+language: zh
+blocks: 27, units: 38
+
+# 0 title
+  0 zh title | 用 Swift 写一个菜单栏朗读器：从文字到声音。
+
+# 1 paragraph
+  1 zh | 二零二四年十月，我开始写一个小工具：把网页文章交给本地的语音模型，在 macOS 的菜单栏里朗读出来。
+  2 zh | 这篇文章记录了整个过程，也包括踩过的坑。
+
+# 2 quote
+  3 zh | NOTE: 本文的代码都在 GitHub 上，欢迎提 issue。
+
+# 3 heading
+  4 zh heading | 一、为什么要自己写。
+
+# 4 paragraph
+  5 zh | 市面上的朗读软件大多有两个问题：一是中英文混排时容易读错，比如把“iPhone 16 Pro”读成一串字母；
+  6 zh | 二是遇到长句子就卡住，要等很久才出声。
+  7 zh | 我想要的是打开就能听，而且不上传任何内容。
+
+# 5 paragraph
+  8 zh | 详见。
+  9 zh | 下面分三部分来讲。
+
+# 6 heading
+  10 zh heading | 1.1 目标。
+
+# 7 listItem
+  11 zh | 支持中文和英文
+
+# 8 listItem
+  12 zh | 句子级别的高亮
+
+# 9 listItem
+  13 zh | 支持日文（暂不考虑）
+
+# 10 listItem
+  14 zh | 首句延迟低于 1 秒
+
+# 11 heading
+  15 zh heading | 二、文本处理。
+
+# 12 paragraph
+  16 zh | 网页先经过 defuddle 转成 Markdown，再去掉脚注、图片和链接地址，例如下面这张图：
+
+# 13 paragraph
+  17 zh | 清理之后的文本按句子切分。
+  18 zh | 中文以“。！？”
+  19 zh | 结尾；
+  20 zh | 英文要小心缩写，比如 Dr. Smith 和 e.g. 这种写法，数字 3.14、1,000 和 12:30 也不能拆开。
+
+# 14 paragraph
+  21 zh | 分句的代码在 SpeechChunker 里，核心逻辑大概是这样：
+
+# 15 paragraph
+  22 zh | 如果一个句子特别长而且完全没有标点符号比如这一句就是故意写成这样的它会一直延续下去直到超过一百二十个字为止这时候分句器只能在空白或者硬切的位置把它
+  23 zh | 分开否则合成一次要等很久用户的体验会很差所以必须把它切开才行而且切开以后每一段都要尽量一样长不能在最后留下一个只有两三个字的小尾巴听起来才不会奇怪。
+
+# 16 heading
+  24 zh heading | 三、语音合成。
+
+# 17 paragraph
+  25 zh | 模型用的是 Kokoro，中文和英文各一个。
+  26 zh | 合成速度大约是实时的十倍 ——在 M1 上测得 RTF 约为 0.1。
+
+# 18 quote
+  27 zh | 有人问：“为什么不用系统自带的语音？”
+
+# 19 quote
+  28 zh | 因为系统语音的中文不够自然，而且不能控制停顿。
+
+# 20 paragraph
+  29 zh | 调用接口时要带上令牌：
+
+# 21 paragraph
+  30 zh | 按 ⌘ + R 可以重新朗读当前段落。
+
+# 22 heading
+  31 zh heading | 3.1 数字的读法。
+
+# 23 paragraph
+  32 zh | “一九零零年”和“二零二四年”里的圈要读成“零”，而“○○公司”这种占位符保持原样。
+  33 zh | 价格写成 ¥199 或者 50% 都能正确朗读，1 这样的数字表情也会读出数字。
+
+# 24 paragraph
+  34 zh | 另外，R&D 部门的同事提醒我：Markdown 里的 *星号* 和 _下划线_ 要还原成普通字符。
+
+# 25 heading
+  35 zh heading | 四、小结。
+
+# 26 paragraph
+  36 zh | 整个项目断断续续写了三个月，代码不到五千行。
+  37 zh | 如果你也想试试，可以从官方文档开始。

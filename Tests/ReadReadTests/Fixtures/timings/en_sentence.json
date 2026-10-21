@@ -1,0 +1,110 @@
+{
+ "request_id": "p5-en_sentence",
+ "sample_rate": 24000,
+ "duration": 7.08,
+ "audio": "",
+ "silent": false,
+ "voice": "af_heart",
+ "lang": "en",
+ "speed": 1.0,
+ "synth_speed": 1.0,
+ "sentences": [
+  {
+   "text": "On the twenty-first of October 2024, Doctor Smith read 3.5 chapters of the e-book aloud in London.",
+   "start": 0.0,
+   "end": 7.08
+  }
+ ],
+ "tokens": [
+  {
+   "text": "On",
+   "start": 0.09,
+   "end": 0.19
+  },
+  {
+   "text": "the",
+   "start": 0.215,
+   "end": 0.265
+  },
+  {
+   "text": "twenty-first",
+   "start": 0.315,
+   "end": 0.865
+  },
+  {
+   "text": "of",
+   "start": 0.89,
+   "end": 0.94
+  },
+  {
+   "text": "October",
+   "start": 1.015,
+   "end": 1.49
+  },
+  {
+   "text": "2024",
+   "start": 1.565,
+   "end": 2.79
+  },
+  {
+   "text": "Doctor",
+   "start": 2.965,
+   "end": 3.34
+  },
+  {
+   "text": "Smith",
+   "start": 3.415,
+   "end": 3.84
+  },
+  {
+   "text": "read",
+   "start": 3.915,
+   "end": 4.09
+  },
+  {
+   "text": "3.5",
+   "start": 4.19,
+   "end": 5.065
+  },
+  {
+   "text": "chapters",
+   "start": 5.14,
+   "end": 5.59
+  },
+  {
+   "text": "of",
+   "start": 5.615,
+   "end": 5.665
+  },
+  {
+   "text": "the",
+   "start": 5.69,
+   "end": 5.765
+  },
+  {
+   "text": "e-book",
+   "start": 5.815,
+   "end": 6.14
+  },
+  {
+   "text": "aloud",
+   "start": 6.19,
+   "end": 6.54
+  },
+  {
+   "text": "in",
+   "start": 6.565,
+   "end": 6.615
+  },
+  {
+   "text": "London",
+   "start": 6.665,
+   "end": 7.08
+  }
+ ],
+ "timing_ms": {
+  "frontend": 3,
+  "synth": 757
+ },
+ "input_text": "On 21 October 2024, Dr. Smith read 3.5 chapters of the e-book aloud in London."
+}

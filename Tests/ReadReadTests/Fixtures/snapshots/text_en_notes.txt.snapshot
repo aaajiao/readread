@@ -1,0 +1,36 @@
+title: en_notes
+source: en_notes.txt
+language: en
+blocks: 9, units: 14
+
+# 0 paragraph
+  0 en | Meeting notes: reading app, 21 October
+
+# 1 paragraph
+  1 en | Attendees: Dr. Chen, Ms. Rivera, J. Park (remote).
+
+# 2 paragraph
+  2 en | The team reviewed the first beta.
+  3 en | Most testers liked the voices, but a few said the app paused too long between paragraphs.
+  4 en | Ms. Rivera thinks the pause after a heading should stay at half a second, while the pause between sentences could drop to a quarter.
+
+# 3 listItem
+  5 en | Fix the pause after list items.
+
+# 4 listItem
+  6 en | Read "U.S." and "e.g." correctly - both broke in build 41.
+
+# 5 listItem
+  7 en | Check prices like $5.99 and 3.5% in the English pipeline.
+
+# 6 listItem
+  8 en | Ask whether
+  9 zh | 二零二四年
+  10 en | should be read as a year.
+
+# 7 paragraph
+  11 en | Next meeting: Tuesday at 10:30.
+  12 en | Agenda at (internal).
+
+# 8 paragraph
+  13 en | P.S. Thanks to everyone who sent recordings!

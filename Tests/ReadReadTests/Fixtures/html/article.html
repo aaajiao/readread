@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Talking Machine - Fixture Weekly</title>
+<meta name="author" content="Ada Example">
+<meta property="og:site_name" content="Fixture Weekly">
+<meta property="article:published_time" content="2026-10-01T09:00:00Z">
+<link rel="stylesheet" href="style.css">
+<script>
+  // A local file's own scripts must not run: this would add a paragraph and rename the page.
+  document.addEventListener('DOMContentLoaded', () => {
+    const p = document.createElement('p');
+    p.textContent = 'SCRIPT RAN: this sentence must never be read.';
+    document.querySelector('article').appendChild(p);
+    document.title = 'Rewritten by a script';
+  });
+</script>
+</head>
+<body>
+<nav class="site-nav"><a href="index.html">Home</a> <a href="archive.html">Archive</a> <a href="about.html">About us</a></nav>
+<main>
+<article>
+<h1>The Talking Machine</h1>
+<p class="byline">By Ada Example</p>
+<p>Speech synthesis is the artificial production of human speech. A computer system used for this purpose is called a speech synthesizer, and it can be built in software or in hardware.<sup id="ref-1"><a href="#note-1">[1]</a></sup></p>
+<img src="figure.png" alt="A diagram of a vocal tract">
+<h2>Early machines</h2>
+<p>Long before electronic signal processing, inventors tried to build machines that imitate the human voice. Some of them used bellows, reeds and leather tubes to shape the sound.</p>
+<ul>
+<li>The acoustic-mechanical speech machine of the eighteenth century.</li>
+<li>The Voder, shown at the 1939 World's Fair.</li>
+</ul>
+<h2>Modern systems</h2>
+<p>Modern systems join recorded units or generate the waveform with a neural network. They read news, books and screens aloud for people who cannot or would rather not read them.</p>
+<blockquote><p>The best voice is the one you stop noticing.</p></blockquote>
+</article>
+<section class="footnotes"><ol><li id="note-1">A note at the end of the article.</li></ol></section>
+</main>
+<footer class="site-footer">Copyright 2026 Fixture Weekly. All rights reserved. Subscribe to our newsletter.</footer>
+</body>
+</html>

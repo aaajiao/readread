@@ -1,0 +1,52 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title></title>
+  <meta name="Author" content="ReadRead Fixtures">
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="2775.1">
+  <style type="text/css">
+    p.p2 {margin: 0.0px 0.0px 12.0px 0.0px; font: 12.0px Times; -webkit-text-stroke: #000000}
+    p.p4 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Times; -webkit-text-stroke: #000000}
+    li.li4 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Times; -webkit-text-stroke: #000000}
+    span.s1 {font-kerning: none}
+    span.s2 {-webkit-text-stroke: 0px #000000}
+    td.td1 {width: 216.3px; margin: 0.5px 0.5px 0.5px 0.5px; padding: 1.0px 1.0px 1.0px 1.0px}
+    td.td2 {width: 200.3px; margin: 0.5px 0.5px 0.5px 0.5px; padding: 1.0px 1.0px 1.0px 1.0px}
+    ol.ol1 {list-style-type: decimal}
+    ul.ul1 {list-style-type: disc}
+  </style>
+</head>
+<body>
+<h1 style="margin: 0.0px 0.0px 16.1px 0.0px; font: 24.0px Times; -webkit-text-stroke: #000000"><span class="s1"><b>A Short History of Talking Machines</b></span></h1>
+<p class="p2"><span class="s1">Speech synthesis is the artificial production of human speech. A computer system used for this purpose is called a speech synthesizer.</span></p>
+<h2 style="margin: 0.0px 0.0px 14.9px 0.0px; font: 18.0px Times; -webkit-text-stroke: #000000"><span class="s1"><b>Early machines</b></span></h2>
+<p class="p2"><span class="s1">Long before electronic signal processing, inventors built machines that imitated the human voice with bellows, reeds and leather tubes.</span></p>
+<ul class="ul1">
+  <li class="li4"><span class="s2"></span><span class="s1">The acoustic-mechanical speech machine of the eighteenth century.</span></li>
+  <li class="li4"><span class="s2"></span><span class="s1">The Voder, shown at the 1939 World's Fair.</span></li>
+</ul>
+<h2 style="margin: 0.0px 0.0px 14.9px 0.0px; font: 18.0px Times; -webkit-text-stroke: #000000"><span class="s1"><b>语音合成</b></span></h2>
+<p class="p2"><span class="s1">语音合成是通过机械的、电子的方法产生人造语音的技术。它把文字转换成可以听懂的声音。</span></p>
+<ol class="ol1">
+  <li class="li4"><span class="s2"></span><span class="s1">第一步，分析文本。</span></li>
+  <li class="li4"><span class="s2"></span><span class="s1">第二步，生成波形。</span></li>
+</ol>
+<table cellspacing="0" cellpadding="0">
+  <tbody>
+    <tr>
+      <td valign="middle" class="td1">
+        <p class="p4"><span class="s1">Concatenative synthesis joins recorded units.</span></p>
+      </td>
+      <td valign="middle" class="td2">
+        <p class="p4"><span class="s1">Neural synthesis generates the waveform.</span></p>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<h2 style="margin: 0.0px 0.0px 14.9px 0.0px; font: 18.0px Times; -webkit-text-stroke: #000000"><span class="s1"><b>References</b></span></h2>
+<p class="p2"><span class="s1">A reference that is not read aloud.</span></p>
+</body>
+</html>

@@ -30,12 +30,64 @@ final class SelfTestTests: XCTestCase {
                        ["ReadRead", "朗", "读", "重", "公", "斤"])
     }
 
-    func testTheCasesHaveExpectedDurations() {
-        XCTAssertEqual(SelfTest.cases.map(\.voice), ["zf_001", "af_heart", "bf_emma"])
+    /// The cases read through each pipeline (Chinese, US and UK English) with catalog voices, and
+    /// the duration band is the smoke test's.
+    func testTheCasesCoverEveryPipelineWithinTheSmokeTestsBand() throws {
+        let accents = SelfTest.cases.compactMap { Voice.voice(id: $0.voice)?.accent }
+        XCTAssertEqual(accents.count, SelfTest.cases.count, "every case's voice is in the catalog")
+        XCTAssertEqual(Set(accents), [.zh, .us, .uk])
         XCTAssertTrue(SelfTest.cases.allSatisfy { $0.expectedDuration > 1 })
         // the band catches audio that lost a fifth of its words, and allows a little drift
         XCTAssertFalse(SelfTest.durationBand.contains(0.75))
         XCTAssertTrue(SelfTest.durationBand.contains(0.9) && SelfTest.durationBand.contains(1.2))
+
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let smoke = try String(contentsOf: root.appending(path: "scripts/smoke-test.sh"), encoding: .utf8)
+        func value(_ name: String) throws -> Double? {
+            let line = try XCTUnwrap(smoke.split(separator: "\n").first { $0.hasPrefix(name + "=") }, name)
+            return Double(line.dropFirst(name.count + 1))
+        }
+        XCTAssertEqual(try value("DURATION_MIN"), SelfTest.durationBand.lowerBound)
+        XCTAssertEqual(try value("DURATION_MAX"), SelfTest.durationBand.upperBound)
+    }
+
+    /// A dev environment (no bundle) whose `$READREAD_HOME` is `home`, the cache inside it.
+    private func context(home: URL) -> TTSServerPaths.Context {
+        TTSServerPaths.Context(
+            bundleResources: nil,
+            environment: ["READREAD_HOME": home.path, "READREAD_CACHE_DIR": home.appending(path: "cache").path],
+            homeDirectory: home.path, currentDirectory: home.path)
+    }
+
+    private func temporaryHome() throws -> URL {
+        let home = FileManager.default.temporaryDirectory.appending(path: "ReadReadTests-selftest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: home) }
+        return home
+    }
+
+    /// Without a Defuddle build the page reader check fails with the setup hint, before any web view.
+    func testThePageReaderCheckNeedsTheDefuddleBuild() async throws {
+        let check = await SelfTest.checkExtraction(context: context(home: try temporaryHome()))
+        XCTAssertFalse(check.ok)
+        XCTAssertNil(check.script)
+        XCTAssertEqual(check.error, LocalExtractorError.bundleMissing.errorDescription)
+    }
+
+    /// The pinned Defuddle build turns the check's page into exactly `extractionUnits`, so the self
+    /// test (and the smoke test's (b) with it) fails only when the page reader does (WebKit).
+    func testThePageReaderCheckReadsItsPage() async throws {
+        let script = try WebKitTestGate.defuddleScript()
+        let home = try temporaryHome()
+        let file = home.appending(path: "defuddle/defuddle.full.js")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(script.utf8).write(to: file)
+        let check = await SelfTest.checkExtraction(context: context(home: home))
+        XCTAssertTrue(check.ok, check.error ?? "")
+        XCTAssertEqual(check.title, SelfTest.extractionTitle)
+        XCTAssertEqual(check.units, SelfTest.extractionUnits)
+        XCTAssertEqual(check.script, file.path(percentEncoded: false))
     }
 
     func testLogProblemsAreReadFromWhereThisRunStarted() throws {

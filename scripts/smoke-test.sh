@@ -3,6 +3,8 @@
 #
 #   scripts/smoke-test.sh build/ReadRead.app
 #
+#   (defuddle) Resources/defuddle/ holds exactly the pinned Defuddle files (scripts/lib/versions.sh,
+#       RR_DEFUDDLE_FILES: defuddle.full.js and LICENSE), each with its pinned size and sha256.
 #   (a) Bundled server: Resources/python/bin/python3 -I -B Resources/tts_server/tts_server.py
 #       --models-dir Resources/models --preload zh,en prints READY within 120 s; GET /health is 200
 #       with the token and 401 without; POST /synthesize (format json, as the app asks) for zh
@@ -11,15 +13,25 @@
 #       text has a word no lexicon knows, which only the espeak-ng fallback reads. Closing its
 #       stdin makes it exit within 5 s, and its stderr has no line that means broken espeak-ng
 #       data ("Can't read dictionary file", "words count mismatch").
-#   (b) Contents/MacOS/ReadRead --self-test exits 0: through the app's own lifecycle code it starts
-#       the bundled server, checks that every app voice (Voice.all) is in GET /voices, synthesizes
-#       zh, en-US and en-GB, and stops the server. A binary without a self-test mode is FAILed
-#       without being run: it would start the menu bar app instead.
+#   (b) Contents/MacOS/ReadRead --self-test exits 0: the bundled Defuddle reads a page held in
+#       memory in an offscreen web view (no network) into the expected document, and through the
+#       app's own lifecycle code it starts the bundled server, checks that every app voice
+#       (Voice.all) is in GET /voices, synthesizes zh, en-US and en-GB, plays a fixture document
+#       offline, and stops the server. Its report must name the bundle's own
+#       Resources/defuddle/defuddle.full.js as the page reader. A binary without a self-test mode
+#       is FAILed without being run: it would start the menu bar app instead.
 #   (c) The bundle is unchanged by (a) and (b): same files, sizes and mtimes (no runtime .pyc).
 #   (d) (a) again from a copy of the app, named ReadRead.app whatever <app> is called, whose bundle
 #       path is >= 160 characters (espeak-ng keeps its data path in a 160-byte buffer; long paths
 #       happen, e.g. under App Translocation).
 #   (e) codesign --verify --strict --deep.
+#   (f) v0.4.0 UI: the Info.plist has development region en, localizations [en, zh-Hans], one
+#       Services item (readAloud, plain text + URL, an NSRequiredContext so it is shown) and document
+#       types that are all Viewer / Alternate (never the default app); zh-Hans.lproj holds UTF-8,
+#       lint-clean Localizable.strings and ServicesMenu.strings (the Services title translated); the
+#       binary has the readAloud:userData:error: selector the Services entry names. ATS: local
+#       networking and NSAllowsArbitraryLoadsInWebContent (the page reader opens http:// pages), no
+#       NSAllowsArbitraryLoads.
 #
 # Cache, logs, user lexicon and TMPDIR point into a temp dir (READREAD_CACHE_DIR, READREAD_LOG_DIR,
 # READREAD_USER_LEXICON, READREAD_HOME), which is deleted at exit unless a step failed.
@@ -323,6 +335,41 @@ snapshot() { # <app> <out>: every path with size and mtime (ns)
 echo "=== Smoke test: $APP ==="
 snapshot "$APP" "$TMP_ROOT/before.txt"
 
+# ── (defuddle) bundled Defuddle page reader ──────────────────────────
+# Contents/Resources/defuddle/ holds exactly the pinned Defuddle files (scripts/lib/versions.sh,
+# RR_DEFUDDLE_FILES), each with its size and sha256, and nothing else: the app injects
+# defuddle.full.js into an offscreen web view to read pages on this Mac.
+echo "-- (defuddle) bundled Defuddle page reader"
+# shellcheck source-path=SCRIPTDIR source=lib/versions.sh
+. "$(cd "$(dirname "$0")" && pwd)/lib/versions.sh"
+DEFUDDLE_DIR="$APP/Contents/Resources/defuddle"
+defuddle_ok=1
+defuddle_count=0
+while read -r _ size sha name; do
+    [ -n "$name" ] || continue
+    defuddle_count=$((defuddle_count + 1))
+    if [ ! -f "$DEFUDDLE_DIR/$name" ]; then
+        fail defuddle "missing $DEFUDDLE_DIR/$name"
+        defuddle_ok=0
+        continue
+    fi
+    got_sha=$(shasum -a 256 "$DEFUDDLE_DIR/$name" | awk '{print $1}')
+    got_size=$(stat -f %z "$DEFUDDLE_DIR/$name")
+    if [ "$got_sha" != "$sha" ] || [ "$got_size" != "$size" ]; then
+        fail defuddle "$name: $got_size bytes, sha256 $got_sha (pinned: $size bytes, sha256 $sha)"
+        defuddle_ok=0
+    fi
+done <<<"$RR_DEFUDDLE_FILES"
+defuddle_found=$(find "$DEFUDDLE_DIR" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
+if [ "$defuddle_ok" = 1 ] && [ "$defuddle_found" != "$defuddle_count" ]; then
+    fail defuddle "$DEFUDDLE_DIR holds $defuddle_found entries, the pin lists $defuddle_count"
+    defuddle_ok=0
+fi
+if [ "$defuddle_ok" = 1 ]; then
+    pass defuddle "Defuddle $RR_DEFUDDLE_VERSION: $defuddle_count files match their pinned sha256 ($(awk 'NF == 4 {printf "%s %s ", $4, substr($3, 1, 12)}' <<<"$RR_DEFUDDLE_FILES"))"
+fi
+# ── end of the Defuddle check ────────────────────────────────────────
+
 # ── (a) bundled server ───────────────────────────────────────────────
 echo "-- (a) bundled TTS server"
 server_checks a "$APP" "$TMP_ROOT/a" || true
@@ -363,6 +410,17 @@ else
             tail_file "$TMP_ROOT/b/stderr" "self-test stderr"
             tail_file "$TMP_ROOT/b/logs/tts-server.log" "tts-server.log"
         fi
+        # The page reader: the bundle's own Defuddle (not a dev copy) read the self test's page.
+        printf '%s\n' "$report" >"$TMP_ROOT/b/report.json"
+        reader=$(json_get "$TMP_ROOT/b/report.json" extraction.script)
+        reader_dir=$(cd "$(dirname "${reader:-/nonexistent/x}")" 2>/dev/null && pwd -P || true)
+        if [ "$(json_get "$TMP_ROOT/b/report.json" extraction.ok)" = true ] &&
+            [ "$(basename "${reader:-x}")" = defuddle.full.js ] &&
+            [ "$reader_dir" = "$(cd "$APP/Contents/Resources/defuddle" 2>/dev/null && pwd -P)" ]; then
+            pass b "page reader: the bundled Defuddle read the self test's page on this Mac in $(json_get "$TMP_ROOT/b/report.json" extraction.ms) ms ($(json_get "$TMP_ROOT/b/report.json" extraction.units) units)"
+        else
+            fail b "page reader: ok=$(json_get "$TMP_ROOT/b/report.json" extraction.ok), script=${reader:-none}, error: $(json_get "$TMP_ROOT/b/report.json" extraction.error)"
+        fi
     fi
     CHILD_PID=""
 fi
@@ -397,6 +455,80 @@ if codesign --verify --strict --deep "$APP" 2>"$TMP_ROOT/codesign.txt"; then
 else
     fail e "codesign --verify --strict --deep: $(tr '\n' ' ' <"$TMP_ROOT/codesign.txt")"
 fi
+
+# ── (f) v0.4.0 UI (P5): Info.plist keys, localizations, Services ─────
+echo "-- (f) localizations, Services and document types"
+# perl -e "$PLIST_CHECK_PL" < <Info.plist as JSON>: prints a summary and exits 0, or the problems and 1.
+PLIST_CHECK_PL=$(
+    cat <<'PERL'
+use strict; use warnings; use JSON::PP;
+local $/;
+my $p = decode_json(<STDIN>);
+my @problems;
+sub want { my ($ok, $message) = @_; push @problems, $message unless $ok; }
+want(($p->{CFBundleDevelopmentRegion} // '') eq 'en', 'CFBundleDevelopmentRegion is not en');
+my @languages = @{ $p->{CFBundleLocalizations} // [] };
+want(join(',', sort @languages) eq 'en,zh-Hans', "CFBundleLocalizations is [@languages], not [en zh-Hans]");
+my @services = @{ $p->{NSServices} // [] };
+want(@services == 1, scalar(@services) . ' NSServices entries, not 1');
+if (my $s = $services[0]) {
+    want(($s->{NSMessage} // '') eq 'readAloud', 'NSMessage is not readAloud');
+    want(($s->{NSPortName} // '') eq 'ReadRead', 'NSPortName is not ReadRead');
+    want((($s->{NSMenuItem} // {})->{default} // '') eq 'Read Aloud with ReadRead', 'the Services title is not "Read Aloud with ReadRead"');
+    my %send = map { $_ => 1 } @{ $s->{NSSendTypes} // [] };
+    want($send{'public.utf8-plain-text'} && $send{'public.url'}, 'NSSendTypes lack public.utf8-plain-text or public.url');
+    want(ref($s->{NSRequiredContext}) eq 'HASH', 'no NSRequiredContext dictionary: the item would not be shown');
+}
+my (@ids, %seen);
+for my $t (@{ $p->{CFBundleDocumentTypes} // [] }) {
+    my @types = @{ $t->{LSItemContentTypes} // [] };
+    want(@types > 0, 'a document type without LSItemContentTypes');
+    push @ids, @types;
+    $seen{$_}++ for @types;
+    want(($t->{LSHandlerRank} // '') eq 'Alternate', "rank of @types is " . ($t->{LSHandlerRank} // 'unset') . ', not Alternate');
+    want(($t->{CFBundleTypeRole} // '') eq 'Viewer', "role of @types is not Viewer");
+}
+want($seen{'public.plain-text'} && $seen{'net.daringfireball.markdown'}, 'plain text or Markdown is not a document type');
+my $ats = $p->{NSAppTransportSecurity} // {};
+want($ats->{NSAllowsLocalNetworking} && $ats->{NSAllowsArbitraryLoadsInWebContent} && !exists $ats->{NSAllowsArbitraryLoads},
+    'ATS is not local networking + web content only (the page reader needs http:// pages, URLSession keeps ATS)');
+want(!grep({ $seen{$_} > 1 } keys %seen), 'an identifier is declared twice');
+if (@problems) { print join('; ', @problems), "\n"; exit 1; }
+printf "region en, localizations [%s], Services item readAloud (plain text + URL), %d document types, all Viewer/Alternate, ATS exempts only the web view\n",
+    join(' ', @languages), scalar(@ids);
+PERL
+)
+if plist_summary=$(plutil -convert json -o - "$APP/Contents/Info.plist" 2>&1 | perl -e "$PLIST_CHECK_PL" 2>&1); then
+    pass f "Info.plist: $plist_summary"
+else
+    fail f "Info.plist: $plist_summary"
+fi
+LPROJ="$APP/Contents/Resources/zh-Hans.lproj"
+lproj_problems=""
+for table in Localizable ServicesMenu; do
+    file="$LPROJ/$table.strings"
+    if [ ! -f "$file" ]; then
+        lproj_problems="$lproj_problems no $table.strings;"
+    elif ! plutil -lint "$file" >/dev/null 2>&1; then
+        lproj_problems="$lproj_problems $table.strings fails plutil -lint;"
+    elif ! iconv -f UTF-8 -t UTF-8 "$file" >/dev/null 2>&1; then
+        lproj_problems="$lproj_problems $table.strings is not UTF-8;"
+    fi
+done
+zh_entries=$(plutil -convert json -o - "$LPROJ/Localizable.strings" 2>/dev/null |
+    perl -MJSON::PP -0777 -ne 'print scalar keys %{ decode_json($_) }' 2>/dev/null || echo 0)
+[ "${zh_entries:-0}" -gt 0 ] || lproj_problems="$lproj_problems Localizable.strings has no entries;"
+zh_title=$(plutil -extract "Read Aloud with ReadRead" raw -o - "$LPROJ/ServicesMenu.strings" 2>/dev/null || true)
+[ "$zh_title" = "用 ReadRead 朗读" ] || lproj_problems="$lproj_problems the zh-Hans Services title is \"$zh_title\", not \"用 ReadRead 朗读\";"
+[ -s "$TMP_ROOT/bin-strings.txt" ] || strings -a "$BIN" >"$TMP_ROOT/bin-strings.txt" 2>/dev/null || true
+grep -q 'readAloud:userData:error:' "$TMP_ROOT/bin-strings.txt" ||
+    lproj_problems="$lproj_problems the binary has no readAloud:userData:error: method;"
+if [ -z "$lproj_problems" ]; then
+    pass f "zh-Hans.lproj: Localizable.strings ($zh_entries entries) and ServicesMenu.strings (\"$zh_title\") lint clean, UTF-8; the binary answers readAloud:userData:error:"
+else
+    fail f "zh-Hans.lproj / Services:$lproj_problems"
+fi
+# ── end (f) ──────────────────────────────────────────────────────────
 
 echo ""
 echo "=== Smoke test summary ==="

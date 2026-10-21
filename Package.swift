@@ -8,9 +8,10 @@ let package = Package(
         .executableTarget(
             name: "ReadRead",
             path: "Sources/ReadRead",
-            // The icons are build-script inputs (scripts/build-app.sh copies them
-            // into Contents/Resources). No SwiftPM resources means no generated
-            // Bundle.module accessor, which crashed the release app at launch.
+            // The icons and the zh-Hans.lproj strings are build-script inputs
+            // (scripts/build-app.sh copies them into Contents/Resources). No SwiftPM
+            // resources means no generated Bundle.module accessor, which crashed the
+            // release app at launch.
             exclude: ["Resources"]
         ),
         .testTarget(

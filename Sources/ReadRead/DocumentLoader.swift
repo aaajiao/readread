@@ -3,16 +3,22 @@ import Foundation
 enum DocumentError: LocalizedError, Equatable {
     /// Empty, only markup, or only scripts ReadRead does not read (R3-12).
     case nothingToRead
-    /// defuddle.md cannot reach hosts on the local network; reading them locally comes later.
+    /// A page on the local network, and no Defuddle to read it here (defuddle.md cannot reach it).
     case localNetwork(String)
+    /// Neither this Mac nor defuddle.md could read the page: both reasons.
+    case pageUnreadable(local: String, remote: String)
 
     var errorDescription: String? {
         switch self {
         case .nothingToRead:
-            return "Nothing to read (没有可读的内容): the text is empty, only markup, or in a language ReadRead does not read."
+            return String(localized: "Nothing to read (没有可读的内容): the text is empty, only markup, or in a language ReadRead does not read.",
+                          table: "Content")
         case .localNetwork(let host):
-            return "\(host) is on your local network, which defuddle.md cannot reach. Copy the page's text "
-                + "and paste it here to read it."
+            return String(format: String(localized: "%@ is on your local network, which defuddle.md cannot reach, and ReadRead's page reader (Defuddle) is not installed: run ./scripts/setup.sh, or use the app build-app.sh builds. Or copy the page's text and paste it here to read it.",
+                                         table: "Content"), host)
+        case .pageUnreadable(let local, let remote):
+            return String(format: String(localized: "ReadRead could not read the page on this Mac (%@) nor through defuddle.md (%@).",
+                                         table: "Content"), local, remote)
         }
     }
 }
@@ -23,9 +29,11 @@ struct DocumentLoader: Sendable {
     var fetchPage: @Sendable (URL) async throws -> WebPage
     var readFile: @Sendable (URL) async throws -> LocalFile
 
+    /// By default pages go through `WebPageFetcher` (this Mac or defuddle.md, as Settings says;
+    /// local-network pages only here) and files through `DocumentReader` (every `ReadableFileType`).
     init(
-        fetchPage: @escaping @Sendable (URL) async throws -> WebPage = { try await WebExtractor.extractFromURL($0) },
-        readFile: @escaping @Sendable (URL) async throws -> LocalFile = { try await WebExtractor.readFile($0) }
+        fetchPage: @escaping @Sendable (URL) async throws -> WebPage = { try await WebPageFetcher.live().fetch($0) },
+        readFile: @escaping @Sendable (URL) async throws -> LocalFile = { try await DocumentReader.read($0) }
     ) {
         self.fetchPage = fetchPage
         self.readFile = readFile
@@ -36,20 +44,22 @@ struct DocumentLoader: Sendable {
         let document: ReadingDocument
         switch input {
         case .url(let url):
-            if InputParser.isLocalNetwork(url) {
-                throw DocumentError.localNetwork(url.host(percentEncoded: false) ?? url.absoluteString)
-            }
             let page = try await fetchPage(url)
             try Task.checkCancellation()
-            document = DocumentBuilder.fromMarkdown(page.markdown, title: page.title, source: .url(url),
-                                                    sourceLabel: page.domain)
+            document = page.isPlainText
+                ? DocumentBuilder.fromPlainText(page.markdown, title: page.title, source: .url(url), sourceLabel: page.domain)
+                : DocumentBuilder.fromMarkdown(page.markdown, title: page.title, source: .url(url), sourceLabel: page.domain)
         case .file(let url):
             let file = try await readFile(url)
             try Task.checkCancellation()
             let title = file.titleFromMetadata ? file.title : nil
-            document = file.isMarkdown
-                ? DocumentBuilder.fromMarkdown(file.body, title: title, source: .file(url), sourceLabel: file.fileName)
-                : DocumentBuilder.fromPlainText(file.body, title: title, source: .file(url), sourceLabel: file.fileName)
+            if let blocks = file.blocks {
+                document = DocumentBuilder.build(blocks, title: title, source: .file(url), sourceLabel: file.fileName)
+            } else if file.isMarkdown {
+                document = DocumentBuilder.fromMarkdown(file.body, title: title, source: .file(url), sourceLabel: file.fileName)
+            } else {
+                document = DocumentBuilder.fromPlainText(file.body, title: title, source: .file(url), sourceLabel: file.fileName)
+            }
         case .text(let text):
             let normalized = TextDecoding.normalizeNewlines(text)
             // One Markdown signal must not cost the paste its indented paragraphs.

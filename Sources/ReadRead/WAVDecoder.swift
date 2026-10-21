@@ -14,7 +14,7 @@ enum WAVDecoder {
 
         var errorDescription: String? {
             switch self {
-            case .invalid(let reason): return "The synthesized audio is not a usable WAV file (\(reason))."
+            case .invalid(let reason): return String(localized: "The synthesized audio is not a usable WAV file (\(reason)).")
             }
         }
     }

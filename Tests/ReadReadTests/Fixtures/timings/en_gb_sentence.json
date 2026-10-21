@@ -1,0 +1,90 @@
+{
+ "request_id": "p5-en_gb_sentence",
+ "sample_rate": 24000,
+ "duration": 3.89,
+ "audio": "",
+ "silent": false,
+ "voice": "bf_emma",
+ "lang": "en",
+ "speed": 1.0,
+ "synth_speed": 1.0,
+ "sentences": [
+  {
+   "text": "The garden party starts at 4 30 P M; bring your own umbrella.",
+   "start": 0.0,
+   "end": 3.89
+  }
+ ],
+ "tokens": [
+  {
+   "text": "The",
+   "start": 0.09,
+   "end": 0.14
+  },
+  {
+   "text": "garden",
+   "start": 0.19,
+   "end": 0.565
+  },
+  {
+   "text": "party",
+   "start": 0.615,
+   "end": 0.965
+  },
+  {
+   "text": "starts",
+   "start": 1.015,
+   "end": 1.34
+  },
+  {
+   "text": "at",
+   "start": 1.365,
+   "end": 1.44
+  },
+  {
+   "text": "4",
+   "start": 1.49,
+   "end": 1.665
+  },
+  {
+   "text": "30",
+   "start": 1.715,
+   "end": 1.965
+  },
+  {
+   "text": "P",
+   "start": 2.015,
+   "end": 2.19
+  },
+  {
+   "text": "M",
+   "start": 2.24,
+   "end": 2.64
+  },
+  {
+   "text": "bring",
+   "start": 2.765,
+   "end": 2.94
+  },
+  {
+   "text": "your",
+   "start": 2.99,
+   "end": 3.115
+  },
+  {
+   "text": "own",
+   "start": 3.165,
+   "end": 3.315
+  },
+  {
+   "text": "umbrella",
+   "start": 3.365,
+   "end": 3.89
+  }
+ ],
+ "timing_ms": {
+  "frontend": 2,
+  "synth": 465
+ },
+ "input_text": "The garden party starts at 4:30 pm; bring your own umbrella."
+}

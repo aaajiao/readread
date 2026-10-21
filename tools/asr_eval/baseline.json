@@ -1,0 +1,472 @@
+{
+ "format": 1,
+ "about": "ASR round-trip baseline of the ReadRead TTS voices (tools/asr_eval). Written by asr_eval.sh --write-baseline; asr_eval.sh --check compares a run with it. Tolerances: see tools/asr_eval/README.md.",
+ "created": "2026-10-21",
+ "scoring_version": "v2.1 (v2: Z11/Z11b Latin-word units, Z12 pinyin error rate, Z13 homophone probes, E11 'dollars and M', H1 Whisper hallucination removal, digital_silence + nan_output flags; v2.1: exact-zero runs within 0.1 s of a sentence edge -> edge_zero_run, not digital_silence; Z13 probes use the transcript's own pinyin); ported unchanged from the October 2026 lab",
+ "asr": {
+  "models": {
+   "whisper": "dropbox-dash/faster-whisper-large-v3-turbo@0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+   "sensevoice": "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17@2365baeacb507f821a0c8120fcee3d484dba7a07",
+   "speaker": "csukuangfj/speaker-embedding-models@0743f301363dec56491a490f6d6cbc9d67f9a3bf"
+  },
+  "versions": {
+   "faster-whisper": "1.2.1",
+   "ctranslate2": "4.8.3",
+   "sherpa-onnx": "1.13.8",
+   "sherpa-onnx-core": "1.13.8",
+   "numpy": "2.5.4",
+   "soundfile": "0.13.1",
+   "soxr": "1.0.0",
+   "rapidfuzz": "3.14.6",
+   "opencc-python-reimplemented": "0.1.7",
+   "text2num": "3.1.0",
+   "onnxruntime": "1.31.0",
+   "pypinyin": "0.55.0"
+  },
+  "threads": 4
+ },
+ "synthesis": {
+  "source": "dev",
+  "engine": "kokoro",
+  "server_code_sha256": "006fc144436c11edb70980fc1cec6cb850d90862220ef7a1162b0b745215ddf2",
+  "server_versions": {
+   "kokoro_onnx": "0.6.1",
+   "misaki": "0.9.4",
+   "onnxruntime": "1.24.4",
+   "python": "3.12.15"
+  },
+  "model_files": [
+   {
+    "file": "kokoro-v1.0.fp16.onnx",
+    "bytes": 163527961
+   },
+   {
+    "file": "kokoro-v1.1-zh.fp16.onnx",
+    "bytes": 163528759
+   },
+   {
+    "file": "voices-v1.0.bin",
+    "bytes": 28214398
+   },
+   {
+    "file": "voices-v1.1-zh.bin",
+    "bytes": 53815880
+   }
+  ],
+  "voices": [
+   "zf_001",
+   "zf_032",
+   "zm_009",
+   "zm_055",
+   "af_heart",
+   "bf_emma"
+  ],
+  "protocol": "one POST /synthesize per passage sentence (format json, speed 1.0, headings with a terminal stop); per_sentence_synth_s = the server's frontend + synth time, per_sentence_request_s = the client's wall time; sentences joined with 0.25 s of silence, 0.5 s after a heading"
+ },
+ "tolerances": {
+  "errors": {
+   "zh": {
+    "fraction": 0.015,
+    "min_units": 1
+   },
+   "en": {
+    "fraction": 0.02,
+    "min_units": 1
+   }
+  },
+  "probes_fewer": 1,
+  "drift_drop": 0.1,
+  "drift_floor": 0.5,
+  "audio_ratio": 0.1,
+  "serious_flags": [
+   "missing_file",
+   "decode_error",
+   "unknown_text_id",
+   "lang_mismatch",
+   "format",
+   "long_silence",
+   "len_ratio_low",
+   "len_ratio_high",
+   "repetition",
+   "sentence_count",
+   "sentence_dir_missing",
+   "concat_mismatch",
+   "sentence_rate",
+   "voice_drift",
+   "digital_silence",
+   "nan_output"
+  ]
+ },
+ "samples": {
+  "af_heart/en_long": {
+   "lang": "en",
+   "audio_s": 56.39,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 143,
+    "error_rate": 0.0,
+    "probes": 15,
+    "probes_total": 15,
+    "missed": []
+   },
+   "drift_loo_min": 0.8875
+  },
+  "af_heart/en_main": {
+   "lang": "en",
+   "audio_s": 33.12,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 69,
+    "error_rate": 0.0,
+    "probes": 12,
+    "probes_total": 12,
+    "missed": []
+   },
+   "drift_loo_min": 0.7055
+  },
+  "bf_emma/en_long": {
+   "lang": "en",
+   "audio_s": 51.76,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 143,
+    "error_rate": 0.0,
+    "probes": 15,
+    "probes_total": 15,
+    "missed": []
+   },
+   "drift_loo_min": 0.8619
+  },
+  "bf_emma/en_main": {
+   "lang": "en",
+   "audio_s": 31.495,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 69,
+    "error_rate": 0.0,
+    "probes": 12,
+    "probes_total": 12,
+    "missed": []
+   },
+   "drift_loo_min": 0.88
+  },
+  "zf_001/zh_hant": {
+   "lang": "zh",
+   "audio_s": 8.135,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 36,
+    "error_rate": 0.0,
+    "probes": 5,
+    "probes_total": 5,
+    "missed": []
+   },
+   "sensevoice": {
+    "errors": 0,
+    "n": 36,
+    "error_rate": 0.0,
+    "probes": 5,
+    "probes_total": 5,
+    "missed": []
+   },
+   "probes_either": 5,
+   "drift_loo_min": 0.8091
+  },
+  "zf_001/zh_long": {
+   "lang": "zh",
+   "audio_s": 78.315,
+   "flags": [],
+   "whisper": {
+    "errors": 3,
+    "n": 347,
+    "error_rate": 0.0086,
+    "probes": 20,
+    "probes_total": 21,
+    "missed": [
+     "长城"
+    ]
+   },
+   "sensevoice": {
+    "errors": 5,
+    "n": 347,
+    "error_rate": 0.0144,
+    "probes": 19,
+    "probes_total": 21,
+    "missed": [
+     "有声书",
+     "python"
+    ]
+   },
+   "probes_either": 21,
+   "drift_loo_min": 0.9032
+  },
+  "zf_001/zh_main": {
+   "lang": "zh",
+   "audio_s": 45.53,
+   "flags": [],
+   "whisper": {
+    "errors": 1,
+    "n": 203,
+    "error_rate": 0.0049,
+    "probes": 18,
+    "probes_total": 19,
+    "missed": [
+     "chatgpt"
+    ]
+   },
+   "sensevoice": {
+    "errors": 5,
+    "n": 203,
+    "error_rate": 0.0246,
+    "probes": 16,
+    "probes_total": 19,
+    "missed": [
+     "github",
+     "chatgpt",
+     "api"
+    ]
+   },
+   "probes_either": 18,
+   "drift_loo_min": 0.8404
+  },
+  "zf_032/zh_hant": {
+   "lang": "zh",
+   "audio_s": 9.5,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 36,
+    "error_rate": 0.0,
+    "probes": 5,
+    "probes_total": 5,
+    "missed": []
+   },
+   "sensevoice": {
+    "errors": 0,
+    "n": 36,
+    "error_rate": 0.0,
+    "probes": 5,
+    "probes_total": 5,
+    "missed": []
+   },
+   "probes_either": 5,
+   "drift_loo_min": 0.8374
+  },
+  "zf_032/zh_long": {
+   "lang": "zh",
+   "audio_s": 88.55,
+   "flags": [
+    "whisper_hallucination('感谢观看'@88.5s)",
+    "whisper_fallback(n=1,T=[0.0, 1.0])"
+   ],
+   "whisper": {
+    "errors": 2,
+    "n": 347,
+    "error_rate": 0.0058,
+    "probes": 21,
+    "probes_total": 21,
+    "missed": []
+   },
+   "sensevoice": {
+    "errors": 5,
+    "n": 347,
+    "error_rate": 0.0144,
+    "probes": 19,
+    "probes_total": 21,
+    "missed": [
+     "有声书",
+     "python"
+    ]
+   },
+   "probes_either": 21,
+   "drift_loo_min": 0.9148
+  },
+  "zf_032/zh_main": {
+   "lang": "zh",
+   "audio_s": 52.245,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 203,
+    "error_rate": 0.0,
+    "probes": 19,
+    "probes_total": 19,
+    "missed": []
+   },
+   "sensevoice": {
+    "errors": 3,
+    "n": 203,
+    "error_rate": 0.0148,
+    "probes": 18,
+    "probes_total": 19,
+    "missed": [
+     "chatgpt"
+    ]
+   },
+   "probes_either": 19,
+   "drift_loo_min": 0.8347
+  },
+  "zm_009/zh_hant": {
+   "lang": "zh",
+   "audio_s": 8.075,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 36,
+    "error_rate": 0.0,
+    "probes": 5,
+    "probes_total": 5,
+    "missed": []
+   },
+   "sensevoice": {
+    "errors": 0,
+    "n": 36,
+    "error_rate": 0.0,
+    "probes": 5,
+    "probes_total": 5,
+    "missed": []
+   },
+   "probes_either": 5,
+   "drift_loo_min": 0.8196
+  },
+  "zm_009/zh_long": {
+   "lang": "zh",
+   "audio_s": 79.15,
+   "flags": [],
+   "whisper": {
+    "errors": 3,
+    "n": 347,
+    "error_rate": 0.0086,
+    "probes": 20,
+    "probes_total": 21,
+    "missed": [
+     "长城"
+    ]
+   },
+   "sensevoice": {
+    "errors": 4,
+    "n": 347,
+    "error_rate": 0.0115,
+    "probes": 20,
+    "probes_total": 21,
+    "missed": [
+     "python"
+    ]
+   },
+   "probes_either": 21,
+   "drift_loo_min": 0.9161
+  },
+  "zm_009/zh_main": {
+   "lang": "zh",
+   "audio_s": 46.285,
+   "flags": [],
+   "whisper": {
+    "errors": 1,
+    "n": 203,
+    "error_rate": 0.0049,
+    "probes": 19,
+    "probes_total": 19,
+    "missed": []
+   },
+   "sensevoice": {
+    "errors": 5,
+    "n": 203,
+    "error_rate": 0.0246,
+    "probes": 17,
+    "probes_total": 19,
+    "missed": [
+     "github",
+     "chatgpt"
+    ]
+   },
+   "probes_either": 19,
+   "drift_loo_min": 0.8384
+  },
+  "zm_055/zh_hant": {
+   "lang": "zh",
+   "audio_s": 9.93,
+   "flags": [],
+   "whisper": {
+    "errors": 0,
+    "n": 36,
+    "error_rate": 0.0,
+    "probes": 5,
+    "probes_total": 5,
+    "missed": []
+   },
+   "sensevoice": {
+    "errors": 0,
+    "n": 36,
+    "error_rate": 0.0,
+    "probes": 5,
+    "probes_total": 5,
+    "missed": []
+   },
+   "probes_either": 5,
+   "drift_loo_min": 0.8105
+  },
+  "zm_055/zh_long": {
+   "lang": "zh",
+   "audio_s": 88.41,
+   "flags": [],
+   "whisper": {
+    "errors": 6,
+    "n": 347,
+    "error_rate": 0.0173,
+    "probes": 19,
+    "probes_total": 21,
+    "missed": [
+     "长城",
+     "python"
+    ]
+   },
+   "sensevoice": {
+    "errors": 4,
+    "n": 347,
+    "error_rate": 0.0115,
+    "probes": 20,
+    "probes_total": 21,
+    "missed": [
+     "python"
+    ]
+   },
+   "probes_either": 20,
+   "drift_loo_min": 0.9185
+  },
+  "zm_055/zh_main": {
+   "lang": "zh",
+   "audio_s": 53.34,
+   "flags": [],
+   "whisper": {
+    "errors": 3,
+    "n": 203,
+    "error_rate": 0.0148,
+    "probes": 17,
+    "probes_total": 19,
+    "missed": [
+     "github",
+     "chatgpt"
+    ]
+   },
+   "sensevoice": {
+    "errors": 5,
+    "n": 203,
+    "error_rate": 0.0246,
+    "probes": 16,
+    "probes_total": 19,
+    "missed": [
+     "github",
+     "chatgpt",
+     "api"
+    ]
+   },
+   "probes_either": 17,
+   "drift_loo_min": 0.8295
+  }
+ }
+}

@@ -852,4 +852,65 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(output.played.last?.synthSpeed, 1.0)
         XCTAssertTrue(player.cache.keys.allSatisfy { $0.engineID == "apple" })
     }
+
+    // MARK: - Word timeline (v0.4.0)
+
+    /// Audio with word timings for the English units below ("Hello there." / "Second one.").
+    private func timedResult(_ request: SynthesisRequest) -> SynthesisResult {
+        let words = request.text.split(separator: " ").map(String.init)
+        let tokens = words.enumerated().map { index, word in
+            TimedSpan(text: word.trimmingCharacters(in: .punctuationCharacters), start: Double(index) * 0.4,
+                      end: Double(index) * 0.4 + 0.35)
+        }
+        return SynthesisResult(wav: minimalWAV, duration: 1, sampleRate: 24_000, silent: false,
+                               sentences: [TimedSpan(text: request.text, start: 0, end: 1)], tokens: tokens,
+                               requestID: request.requestID, synthSpeed: request.speed)
+    }
+
+    func testTheLoadedUnitsTokensBecomeItsWordTimeline() async throws {
+        synth.handler = { [unowned self] in self.timedResult($0) }
+        let player = makePlayer()
+        let doc = document([("Hello there.", .en), ("Second one.", .en)])
+        XCTAssertNil(player.wordTimeline)
+        await startPlaying(doc, player, requests: 2)
+        let first = try XCTUnwrap(player.wordTimeline)
+        XCTAssertEqual(first.unit, 0)
+        XCTAssertEqual(first.timeline.words.map(\.range), [0..<5, 6..<11])
+        output.currentTime = 0.5
+        XCTAssertEqual(player.playbackTime, 0.5, "the output's own (synthesized) time")
+        XCTAssertEqual(first.timeline.word(at: player.playbackTime)?.range, 6..<11)
+
+        player.pause()
+        XCTAssertEqual(player.wordTimeline, first, "paused: the word stays")
+        player.play()
+        output.finish()
+        await waitUntil { player.wordTimeline?.unit == 1 }
+        XCTAssertEqual(player.wordTimeline?.timeline.words.map(\.range), [0..<6, 7..<10])
+
+        player.stop()
+        XCTAssertNil(player.wordTimeline, "nothing loaded, no word")
+    }
+
+    func testAJumpDropsTheOldUnitsTimeline() async throws {
+        synth.handler = { [unowned self] in self.timedResult($0) }
+        synth.holding = true
+        let player = makePlayer()
+        let doc = document([("Hello there.", .en), ("Second one.", .en), ("Third one here.", .en)])
+        player.open(doc, settings: PlaybackSettings(), autoplay: true)
+        synth.release(1)
+        await waitUntil { player.state == .playing }
+        XCTAssertEqual(player.wordTimeline?.unit, 0)
+        player.seek(to: 2)
+        XCTAssertNil(player.wordTimeline, "unit 2 has no audio yet")
+        XCTAssertEqual(player.state, .buffering)
+        synth.holding = false
+        await waitUntil { player.state == .playing && player.currentUnit == 2 }
+        XCTAssertEqual(player.wordTimeline?.unit, 2)
+    }
+
+    func testAnEngineWithoutTokensHasNoWordTimeline() async {
+        let player = makePlayer()
+        await startPlaying(chinese(4), player)
+        XCTAssertNil(player.wordTimeline, "sentence highlight only")
+    }
 }

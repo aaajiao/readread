@@ -1,0 +1,15 @@
+# The ASR round-trip evaluator's own venv (tools/asr_eval; never bundled). These are the lab's pins (October 2026),
+# minus jiwer and cn2an, which the evaluator never imports. Edit this file, then run tools/asr_eval/lock.sh to
+# regenerate the hashed requirements.lock (CPython 3.12 from scripts/lib/versions.sh, macOS arm64, wheels only).
+faster-whisper==1.2.1
+ctranslate2==4.8.3
+av==19.0.1
+sherpa-onnx==1.13.8
+onnxruntime==1.31.0
+numpy==2.5.4
+soundfile==0.13.1
+soxr==1.0.0
+rapidfuzz==3.14.6
+opencc-python-reimplemented==0.1.7
+text2num==3.1.0
+pypinyin==0.55.0

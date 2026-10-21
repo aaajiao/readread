@@ -162,19 +162,24 @@ rr_provision() {
 # rr_provision_models <dest_dir> [seed_dir ...]: the four Kokoro model files. Seed dirs come from
 # the arguments plus READREAD_MODELS_SEED (colon-separated), e.g. a verified copy elsewhere on disk.
 rr_provision_models() {
-    local dir=$1 name size sha seed
+    local dir=$1 name size sha seed count=0 pinned
     shift
     local seeds=("$@")
+    # Process substitution, not here-strings: bash 3.2 writes a here-string to a temp file, and when it
+    # cannot, the loop is skipped without an error.
     while read -r seed; do
         if [ -n "$seed" ]; then seeds+=("$seed"); fi
-    done <<<"$(printf '%s' "${READREAD_MODELS_SEED:-}" | tr ':' '\n')"
+    done < <(printf '%s\n' "${READREAD_MODELS_SEED:-}" | tr ':' '\n')
     while read -r -u 9 name size sha; do
         [ -n "$name" ] || continue
         rr_provision "$name" "$RR_MODEL_BASE_URL/$name" "$size" "$sha" "$dir" ${seeds[@]+"${seeds[@]}"}
-    done 9<<<"$RR_MODELS"
+        count=$((count + 1))
+    done 9< <(printf '%s\n' "$RR_MODELS")
+    pinned=$(rr_model_names | wc -l | tr -d ' ')
+    if [ "$pinned" = 0 ] || [ "$count" != "$pinned" ]; then rr_die "$count of the $pinned model files were provisioned"; fi
 }
 
-rr_model_names() { awk 'NF == 3 {print $1}' <<<"$RR_MODELS"; }
+rr_model_names() { printf '%s\n' "$RR_MODELS" | awk 'NF == 3 {print $1}'; }
 
 # ── Standalone Python ────────────────────────────────────────────────
 # Prints the path of the verified python-build-standalone tarball (downloading it if needed).

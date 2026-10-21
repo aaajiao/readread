@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A Page That Calls Home</title>
+<link rel="stylesheet" href="http://127.0.0.1:PORT/style.css">
+<script src="http://127.0.0.1:PORT/script.js"></script>
+</head>
+<body>
+<article>
+<h1>A Page That Calls Home</h1>
+<p>This saved page refers to a server for its style sheet, its script, an image, a frame and a background. Read from a file, none of them may be fetched: the reader loads nothing from the network.</p>
+<p style="background-image: url(http://127.0.0.1:PORT/background.png)">The second paragraph has a background image that must not load either, and it still has to be read.</p>
+<img src="http://127.0.0.1:PORT/pixel.png" alt="">
+<iframe src="http://127.0.0.1:PORT/frame.html"></iframe>
+</article>
+</body>
+</html>

@@ -69,7 +69,6 @@ final class WAVDecoderTests: XCTestCase {
                 XCTAssertEqual(error as? WAVDecoder.Failure, .invalid(reason))
             }
         }
-        XCTAssertEqual(WAVDecoder.Failure.invalid("x").errorDescription, "The synthesized audio is not a usable WAV file (x).")
     }
 
     func testAChunkSizePastTheEndDoesNotHang() {

@@ -8,11 +8,15 @@
 #   $READREAD_HOME/env/         venv: tts_server/requirements.lock + requirements-dev.txt, hash-checked
 #   $READREAD_HOME/models/      the four Kokoro model files, sha256-verified
 #   $READREAD_HOME/tts_server   symlink to <repo>/tts_server, so the app runs the repo's server code
+#   $READREAD_HOME/defuddle/    the Defuddle page reader (defuddle.full.js + LICENSE, npm, sha256-verified),
+#                               which `swift run ReadRead` injects into an offscreen web view to read
+#                               pages on this Mac (the app bundle carries its own copy)
 #
 # Idempotent: python/ and env/ record the inputs they were built from and are rebuilt only when
 # those change (Python release, lock files) or when env/ no longer holds exactly the locked
 # distributions; model files are re-verified on every run and are taken from build/cache/models
-# (APFS clone or hardlink, no extra copy) when valid copies are there.
+# (APFS clone or hardlink, no extra copy) when valid copies are there; defuddle/ is re-verified on
+# every run and reinstalled from the cached npm tarball when any file differs from its pin.
 #
 # Environment: READREAD_HOME (unset means ~/.readread; set but empty is an error, so an unset
 # variable in READREAD_HOME=$X never falls back to the real one); READREAD_BUILD_CACHE (download
@@ -23,6 +27,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/defuddle.sh
+. "$SCRIPT_DIR/lib/defuddle.sh"
 
 if [ "${READREAD_HOME+set}" = set ] && [ -z "$READREAD_HOME" ]; then
     rr_die "READREAD_HOME is set but empty; unset it to use ~/.readread, or give it a path"
@@ -38,7 +44,7 @@ ENV_PY="$RR_HOME/env/bin/python3"
 
 echo "=== ReadRead dev setup: $RR_HOME ==="
 rr_require_apple_silicon
-rr_require_cmds curl tar
+rr_require_cmds curl tar openssl
 [ -f "$RR_LOCK_FILE" ] && [ -f "$RR_DEV_LOCK_FILE" ] || rr_die "missing lock files (run ./scripts/lock-deps.sh)"
 rr_check_lock_current "$RR_REPO_DIR/tts_server/requirements.in" "$RR_LOCK_FILE"
 DEV_MISSING=$(printf '%s\n' "$RR_DEV_REQUIREMENTS" | tr ' ' '\n' | rr_pins_missing - "$RR_DEV_LOCK_FILE")
@@ -48,7 +54,7 @@ $DEV_MISSING
 mkdir -p "$RR_HOME"
 
 # ── 1. Standalone Python ─────────────────────────────────────────────
-rr_step 1/4 "Standalone Python"
+rr_step 1/5 "Standalone Python"
 PY_STAMP="$RR_PY_VERSION+$RR_PY_RELEASE $RR_PY_SHA256"
 if [ -x "$PY" ] && [ "$(cat "$RR_HOME/python/.readread-python" 2>/dev/null)" = "$PY_STAMP" ]; then
     rr_note "CPython $RR_PY_VERSION ($RR_PY_RELEASE) already installed"
@@ -61,7 +67,7 @@ else
 fi
 
 # ── 2. Virtual environment ───────────────────────────────────────────
-rr_step 2/4 "Virtual environment"
+rr_step 2/5 "Virtual environment"
 ENV_STAMP=$(rr_sha256_string "python=$PY_STAMP lock=$(rr_sha256 "$RR_LOCK_FILE") dev=$(rr_sha256 "$RR_DEV_LOCK_FILE") sdist=$RR_SDIST_PACKAGES recipe=$RR_RUNTIME_RECIPE")
 # The stamp says which locks env/ was built from; this checks it still holds them: every locked
 # distribution at its locked version, nothing else but pip, and a clean `pip check`.
@@ -108,11 +114,11 @@ else
 fi
 
 # ── 3. Model files ───────────────────────────────────────────────────
-rr_step 3/4 "Model files"
+rr_step 3/5 "Model files"
 rr_provision_models "$RR_HOME/models" "$RR_CACHE_DIR/models"
 
 # ── 4. Server code ───────────────────────────────────────────────────
-rr_step 4/4 "Server code"
+rr_step 4/5 "Server code"
 LINK="$RR_HOME/tts_server"
 TARGET="$RR_REPO_DIR/tts_server"
 if [ -L "$LINK" ]; then
@@ -129,11 +135,23 @@ for legacy in tts_server.py tts-port; do
     fi
 done
 
+# ── 5. Defuddle page reader ──────────────────────────────────────────
+rr_step 5/5 "Defuddle page reader"
+DEFUDDLE_DIR="$RR_HOME/defuddle"
+if rr_defuddle_installed "$DEFUDDLE_DIR"; then
+    rr_note "Defuddle $RR_DEFUDDLE_VERSION already installed, every file matches its sha256"
+else
+    if [ -e "$DEFUDDLE_DIR" ]; then rr_note "replacing $DEFUDDLE_DIR (a file differs from the pin, or is missing or extra)"; fi
+    rr_install_defuddle "$DEFUDDLE_DIR"
+    rr_note "installed Defuddle $RR_DEFUDDLE_VERSION: $(cd "$DEFUDDLE_DIR" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')"
+fi
+
 echo ""
 echo "=== Setup complete ($(($(date +%s) - START_TIME)) s) ==="
-echo "  Python:  $ENV_PY ($("$ENV_PY" -I -c 'import platform; print(platform.python_version())'))"
-echo "  Server:  $LINK/tts_server.py"
-echo "  Models:  $RR_HOME/models"
+echo "  Python:   $ENV_PY ($("$ENV_PY" -I -c 'import platform; print(platform.python_version())'))"
+echo "  Server:   $LINK/tts_server.py"
+echo "  Models:   $RR_HOME/models"
+echo "  Defuddle: $DEFUDDLE_DIR (page reader $RR_DEFUDDLE_VERSION)"
 echo ""
 # The app finds this environment through READREAD_HOME when it is not the default ~/.readread.
 RUN_ENV=""

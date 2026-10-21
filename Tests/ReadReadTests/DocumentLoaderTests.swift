@@ -87,16 +87,40 @@ final class DocumentLoaderTests: XCTestCase {
         XCTAssertTrue(DocumentError.nothingToRead.errorDescription?.contains("没有可读的内容") ?? false)
     }
 
-    func testLocalNetworkPagesAreNotSentToDefuddle() async {
+    /// Where a page is read is the fetcher's business (WebPageFetcherTests): a local-network page
+    /// goes to it like any other, and its errors come through.
+    func testLocalNetworkPagesGoToTheFetcher() async throws {
         let fetches = FetchCounter()
-        do {
-            _ = try await loader(page: WebPage(title: nil, markdown: "x", domain: ""), fetches: fetches)
-                .load(.url(URL(string: "http://192.168.1.10/wiki/Page")!))
-            XCTFail("expected localNetwork")
-        } catch {
-            XCTAssertEqual(error as? DocumentError, .localNetwork("192.168.1.10"))
-        }
-        XCTAssertTrue(fetches.urls.isEmpty)
+        let page = WebPage(title: "Wiki", markdown: "A page on the local network.", domain: "192.168.1.10")
+        let document = try await loader(page: page, fetches: fetches).load(.url(URL(string: "http://192.168.1.10/wiki/Page")!))
+        XCTAssertEqual(fetches.urls.map(\.absoluteString), ["http://192.168.1.10/wiki/Page"])
+        XCTAssertEqual(document.units.map(\.speakText), ["Wiki.", "A page on the local network."])
+        let message = DocumentError.localNetwork("192.168.1.10").errorDescription ?? ""
+        XCTAssertTrue(message.hasPrefix("192.168.1.10 is on your local network"), message)
+        XCTAssertTrue(message.contains("./scripts/setup.sh"), "the setup hint")
+        XCTAssertEqual(DocumentError.pageUnreadable(local: "The page did not load within 15 seconds.", remote: "Invalid URL")
+            .errorDescription,
+            "ReadRead could not read the page on this Mac (The page did not load within 15 seconds.) nor through defuddle.md (Invalid URL).")
+    }
+
+    /// A text/plain page read on this Mac goes through the plain-text cleaner: **x** stays text.
+    func testAPlainTextPageIsReadAsPlainText() async throws {
+        let page = WebPage(title: nil, markdown: "Notes about 2 * 3 * 4.\n\n# not a heading\n", domain: "example.com", isPlainText: true)
+        let document = try await loader(page: page).load(.url(URL(string: "https://example.com/notes.txt")!))
+        XCTAssertEqual(document.units.map(\.speakText), ["Notes about 2 * 3 * 4.", "# not a heading"])
+    }
+
+    /// A document's blocks (RTF, PDF, EPUB …) are built as they are; its metadata title comes first.
+    func testADocumentFileIsBuiltFromItsBlocks() async throws {
+        let blocks = [MarkdownCleaner.Block(kind: .heading(1), text: "Chapter One"),
+                      MarkdownCleaner.Block(kind: .paragraph, text: "It begins. It goes on.")]
+        let file = LocalFile(title: "The Book", titleFromMetadata: true, fileName: "book.epub", body: "ignored", isMarkdown: false,
+                             blocks: blocks)
+        let loader = DocumentLoader(fetchPage: { _ in throw WebExtractorError.invalidURL }, readFile: { _ in file })
+        let document = try await loader.load(.file(URL(fileURLWithPath: "/tmp/book.epub")))
+        XCTAssertEqual(document.title, "The Book")
+        XCTAssertEqual(document.sourceLabel, "book.epub")
+        XCTAssertEqual(document.units.map(\.speakText), ["The Book.", "Chapter One.", "It begins.", "It goes on."])
     }
 
     func testFetchErrorsPassThrough() async {

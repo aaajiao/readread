@@ -79,6 +79,13 @@ enum MarkdownCleaner {
         "外部链接", "外部连结", "延伸阅读", "扩展阅读", "相关条目", "参见", "另见",
     ]
 
+    /// The citation sections among them, the only ones dropped from the user's own documents
+    /// (Word, RTF, OpenDocument, PDF, EPUB): their "Notes" or "注释" are the author's and are read.
+    static let citationHeadings: Set<String> = [
+        "references", "reference", "citations", "bibliography", "works cited", "notes and references",
+        "references and notes", "参考文献", "参考资料", "参考来源", "参考书目",
+    ]
+
     /// The Traditional characters of those headings (zh.wikipedia mixes forms: 参考資料).
     static let simplifiedForms: [Character: Character] = [
         "參": "参", "資": "资", "獻": "献", "釋": "释", "鏈": "链", "結": "结", "閱": "阅", "讀": "读", "關": "关",
@@ -107,7 +114,8 @@ enum MarkdownCleaner {
 
     /// Drop each boilerplate section (heading through the next heading of the same or a higher
     /// level), but only after some real content, so a page that is only a reading list stays.
-    static func dropBoilerplateSections(_ blocks: [Block]) -> [Block] {
+    /// `headings`: the section titles that go (`boilerplateHeadings`, or `citationHeadings`).
+    static func dropBoilerplateSections(_ blocks: [Block], headings: Set<String> = boilerplateHeadings) -> [Block] {
         var result: [Block] = []
         var droppingLevel: Int?
         var seenContent = false
@@ -117,7 +125,7 @@ enum MarkdownCleaner {
                     if level > dropping { continue }
                     droppingLevel = nil
                 }
-                if seenContent, boilerplateHeadings.contains(headingKey(block.text)) {
+                if seenContent, headings.contains(headingKey(block.text)) {
                     droppingLevel = level
                     continue
                 }

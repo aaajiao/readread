@@ -141,11 +141,25 @@ final class TTSServerPathsTests: XCTestCase {
         XCTAssertNil(fs.fileSize(atPath: directory.appendingPathComponent("missing").path))
     }
 
-    func testModelFileTableMatchesTheContract() {
-        XCTAssertEqual(ModelFile.all.map(\.name), [
-            "kokoro-v1.1-zh.fp16.onnx", "voices-v1.1-zh.bin", "kokoro-v1.0.fp16.onnx", "voices-v1.0.bin",
-        ])
-        XCTAssertEqual(ModelFile.all.map(\.bytes), [163_528_759, 53_815_880, 163_527_961, 28_214_398])
+    /// The app's size check, the downloads (RR_MODELS in scripts/lib/versions.sh, with the sha256)
+    /// and the server's own check (MODEL_SIZES in engine_kokoro.py) name the same four files at the
+    /// same sizes: a model bump that misses one of them fails here, not on a user's Mac.
+    func testModelFilesAgreeWithTheDownloadPinsAndTheServer() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let app = ModelFile.all.map { "\($0.name) \($0.bytes)" }
+
+        let versions = try String(contentsOf: root.appending(path: "scripts/lib/versions.sh"), encoding: .utf8)
+        let block = try XCTUnwrap(versions.range(of: #"RR_MODELS="[^"]*""#, options: .regularExpression))
+        let pinned = versions[block].split(separator: "\n").dropFirst().dropLast().map { line in
+            line.split(separator: " ").prefix(2).joined(separator: " ")
+        }
+        XCTAssertEqual(pinned, app, "scripts/lib/versions.sh RR_MODELS")
+
+        let engine = try String(contentsOf: root.appending(path: "tts_server/readread_tts/engine_kokoro.py"), encoding: .utf8)
+        let table = try XCTUnwrap(engine.range(of: #"MODEL_SIZES = \{[^}]*\}"#, options: .regularExpression))
+        let server = engine[table].matches(of: /"([^"]+)": (\d+)/).map { "\($0.1) \($0.2)" }
+        XCTAssertEqual(server, app, "tts_server/readread_tts/engine_kokoro.py MODEL_SIZES")
     }
 
     // MARK: - Runtime directories

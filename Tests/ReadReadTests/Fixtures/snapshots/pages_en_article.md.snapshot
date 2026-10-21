@@ -1,0 +1,83 @@
+title: Talking Machines: A Short History
+source: journal.example.org
+language: en
+blocks: 21, units: 37
+
+# 0 title
+  0 en title | Talking Machines: A Short History.
+
+# 1 heading
+  1 en heading | Talking Machines.
+
+# 2 paragraph
+  2 en | By J. R. R. Smith, Ph.D. — 12 March 2024
+
+# 3 paragraph
+  3 en | People have tried to build machines that speak for more than 250 years.
+  4 en | In 1779, Christian Kratzenstein built resonators that produced the five long vowels (in IPA: [aː], [eː], [iː], [oː] and [uː]).
+  5 en | Wolfgang von Kempelen's "acoustic-mechanical speech machine" followed in 1791.
+
+# 4 heading
+  6 en heading | Early electronic systems.
+
+# 5 paragraph
+  7 en | Bell Labs demonstrated the Voder at the 1939 New York World's Fair.
+  8 en | An operator played it like an organ — with a wrist bar, ten keys and a foot pedal — and it took about a year to learn.
+  9 en | Dr. Homer Dudley, its inventor, also built the vocoder (see Fig. 3).
+
+# 6 quote
+  10 en | "The Voder was a curiosity; the vocoder was the real invention."
+  11 en | — an imaginary historian, in A Made-Up History of Sound (p. 42)
+
+# 7 paragraph
+  12 en | In the 1960s, John Larry Kelly Jr. and Louis Gerstman used an IBM 704 to sing "Daisy Bell".
+  13 en | Arthur C. Clarke saw the demo at Bell Labs and used the idea in 2001: A Space Odyssey.
+
+# 8 heading
+  14 en heading | The 1970s and 1980s.
+
+# 9 listItem
+  15 en | Texas Instruments' Speak & Spell (1978) used linear predictive coding.
+
+# 10 listItem
+  16 en | DECtalk (1984) grew out of Dennis Klatt's research.
+
+# 11 listItem
+  17 en | The MITalk system, i.e. the work of Allen, Hunnicutt and Klatt, became a book.
+
+# 12 paragraph
+  18 en | Imagine a speech chip that cost $50 in 1980 and less than $5 by 1990.
+  19 en | Say version v1.2.3 of an engine runs on a phone at 3.14 times real time.
+
+# 13 heading
+  20 en heading | Formants and concatenation.
+
+# 14 paragraph
+  21 en | A formant synthesizer computes the spectrum from rules; the transfer function of a simple resonator is , which we will not need here.
+  22 en | Concatenative systems instead glue recorded units together:
+
+# 15 paragraph
+  23 en | Unit selection, popular in the 2000s, picks the best sequence from a large database of recorded speech; see the overview for details.
+
+# 16 heading
+  24 en heading | Neural voices.
+
+# 17 paragraph
+  25 en | Modern systems such as WaveNet (2016) and Tacotron produce speech that is hard to tell from a person.
+  26 en | Open models now run offline: Kokoro has 82 million parameters, and a reader can use it for both Chinese and English.
+
+# 18 paragraph
+  27 en | Reading Chinese inside English text needs care.
+  28 en | The writer Lu Xun (Chinese:
+  29 zh | 鲁迅
+  30 en | ; 1881–1936) is a good test, as is the game Pokémon (Japanese:
+  31 -- | ポケモン
+  32 en | A good reader says the Chinese name in Chinese and skips the Japanese one.
+
+# 19 paragraph
+  33 en | Some sentences are long, and a reader has to split them somewhere sensible, for example at a comma, a semicolon or a dash, because a sentence that goes on and on without a real pause — like this one,
+  34 en | which keeps adding clauses about vowels, resonators, organs, wrist bars, foot pedals, speech chips and phones — would otherwise take far too long before the first sound comes out of the speaker.
+
+# 20 paragraph
+  35 en | Questions?
+  36 en | Mail or visit .

@@ -16,7 +16,7 @@ enum AudioOutputError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .engine(let message): return "Audio playback could not start: \(message)"
+        case .engine(let message): return String(localized: "Audio playback could not start: \(message)")
         }
     }
 }

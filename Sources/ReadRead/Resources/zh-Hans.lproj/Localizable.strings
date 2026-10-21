@@ -1,0 +1,203 @@
+/* ReadRead UI, Simplified Chinese. The keys are the English strings in Sources/ReadRead (every
+   placeholder is %@: the code interpolates strings only). LocalizationCoverageTests checks that each
+   UI string has an entry here and that each entry is used. Language names (中文, English), voice names
+   and keys such as ⌘V stay as they are. */
+
+/* AppState */
+"The voice preview failed: %@" = "试听失败：%@";
+"ReadRead cannot read “%@”: not a text, Markdown, web page, Word, RTF, OpenDocument, PDF or EPUB file." = "ReadRead 无法读取“%@”：它不是文本、Markdown、网页、Word、RTF、OpenDocument、PDF 或 EPUB 文件。";
+"There is nothing to read in what was dropped." = "拖入的内容中没有可朗读的文字。";
+"The clipboard is empty." = "剪贴板是空的。";
+"Launch at login could not be changed: %@" = "无法更改“登录时打开”：%@";
+"Not running (starts when needed)" = "未运行（需要时启动）";
+"Starting…" = "正在启动…";
+"Running" = "正在运行";
+"Failed: %@" = "失败：%@";
+"The voice engine did not restart: %@" = "语音引擎未能重新启动：%@";
+"Cached articles were removed." = "已清除缓存的文章。";
+"Cached articles could not be removed: %@" = "无法清除缓存的文章：%@";
+"The pronunciation file could not be created: %@" = "无法创建发音文件：%@";
+"No log yet at %@" = "还没有日志：%@";
+
+/* AudioOutput */
+"Audio playback could not start: %@" = "无法开始播放音频：%@";
+
+/* ContentView: input mode, bottom bar, banners */
+"Paste a URL, a file path or text, or open a file to start reading" = "粘贴网址、文件路径或文本，或者打开一个文件，开始朗读";
+"Files, links and text can also be dropped here or on the menu bar icon." = "也可以把文件、链接和文本拖到这里或菜单栏图标上。";
+"URL, file path or text…" = "网址、文件路径或文本…";
+"URL, file path or text" = "网址、文件路径或文本";
+"Read the clipboard (⌘V outside the field)" = "朗读剪贴板（在输入框外按 ⌘V）";
+"Read the clipboard" = "朗读剪贴板";
+"Read" = "朗读";
+"Read it (Return)" = "朗读（Return 键）";
+"Open File…" = "打开文件…";
+"Open a text, Markdown, web page, Word, RTF, OpenDocument, PDF or EPUB file (⌘O)" = "打开文本、Markdown、网页、Word、RTF、OpenDocument、PDF 或 EPUB 文件（⌘O）";
+"Cancel" = "取消";
+"Stop loading" = "停止载入";
+"System voice" = "系统嗓音";
+"Use Kokoro" = "使用 Kokoro";
+"Read with the Kokoro voices again" = "重新使用 Kokoro 嗓音朗读";
+"Starting voice engine…" = "正在启动语音引擎…";
+"Settings (⌘,)" = "设置（⌘,）";
+"Settings" = "设置";
+"Quit" = "退出";
+"Quit ReadRead (⌘Q)" = "退出 ReadRead（⌘Q）";
+"Dismiss" = "关闭";
+"Show Less" = "收起";
+"Show More" = "展开";
+"Show the first lines only" = "只显示前几行";
+"Show the whole message" = "显示完整信息";
+"Copy" = "拷贝";
+"Copy the message" = "拷贝这条信息";
+"Use System Voice" = "使用系统嗓音";
+"Read with the macOS system voice until the voice engine works again" = "在语音引擎恢复之前，用 macOS 系统嗓音朗读";
+"Show Log" = "显示日志";
+"Open the voice engine log" = "打开语音引擎日志";
+"Retry" = "重试";
+"Restart the voice engine if needed and continue" = "必要时重新启动语音引擎，然后继续";
+"TTS Setup Required" = "需要安装语音引擎";
+"Rebuild the app: ./scripts/build-app.sh" = "请重新构建 App：./scripts/build-app.sh";
+"Run: ./scripts/setup.sh" = "请运行：./scripts/setup.sh";
+
+/* FloatingPanel */
+"Resize the panel" = "调整面板大小";
+"Drag to resize the panel" = "拖移以调整面板大小";
+
+/* ReadReadApp */
+"Settings…" = "设置…";
+"There is no text or link to read." = "没有可朗读的文本或链接。";
+
+/* ReadingView */
+"Back to Current" = "回到当前";
+"Scroll to the sentence being read and follow it again" = "滚动到正在朗读的句子，并重新跟随";
+"Choose a sentence to read from there" = "选择一个句子，从那里开始朗读";
+"Close and return to input" = "关闭并返回输入";
+"Close the document" = "关闭文稿";
+"Show in Finder" = "在访达中显示";
+"Reading progress" = "朗读进度";
+"Previous sentence (←)" = "上一句（←）";
+"Previous sentence" = "上一句";
+"Pause (Space)" = "暂停（空格键）";
+"Play (Space)" = "播放（空格键）";
+"Pause" = "暂停";
+"Play" = "播放";
+"Next sentence (→)" = "下一句（→）";
+"Next sentence" = "下一句";
+"Sentence %@ of %@" = "第 %@ 句，共 %@ 句";
+"Smaller text (⌘−)" = "缩小文字（⌘−）";
+"Smaller text" = "缩小文字";
+"Larger text (⌘+)" = "放大文字（⌘+）";
+"Larger text" = "放大文字";
+"Stop (the position is kept)" = "停止（保留朗读位置）";
+"Stop" = "停止";
+"Voice" = "嗓音";
+"Language" = "语言";
+"Auto" = "自动";
+"Read the document as detected, or all in Chinese or English" = "按检测到的语言朗读，或者全部按中文或英文朗读";
+"Speed" = "语速";
+
+/* SettingsView: shortcuts */
+"Play or pause" = "播放或暂停";
+"Previous or next sentence" = "上一句或下一句";
+"Read the clipboard (outside the text field)" = "朗读剪贴板（在输入框外）";
+"Open a file" = "打开文件";
+"Larger, smaller, default text size" = "放大、缩小文字，恢复默认大小";
+"Hide the panel" = "隐藏面板";
+"Quit ReadRead" = "退出 ReadRead";
+
+/* SettingsView: tabs */
+"General" = "通用";
+"Voices" = "嗓音";
+"Reading" = "阅读";
+"Advanced" = "高级";
+
+/* SettingsView: General */
+"Launch at login" = "登录时打开";
+"Status" = "状态";
+"Open Login Items Settings…" = "打开登录项设置…";
+"Keyboard shortcuts in the panel" = "面板中的键盘快捷键";
+"From other apps" = "从其他 App 朗读";
+"Select text or a link in any app and choose Services › Read Aloud with ReadRead (also in the right-click menu). A shortcut can be set in System Settings › Keyboard › Keyboard Shortcuts › Services." = "在任意 App 中选择文本或链接，然后选取“服务 › 用 ReadRead 朗读”（右键菜单中也有）。可以在“系统设置 › 键盘 › 键盘快捷键 › 服务”中为它设置快捷键。";
+"Files, links and text can also be dropped on the menu bar icon or the panel, and files opened with Open With › ReadRead." = "也可以把文件、链接和文本拖到菜单栏图标或面板上，或者用“打开方式 › ReadRead”打开文件。";
+"ReadRead opens when you log in." = "登录时会打开 ReadRead。";
+"Waiting for approval in System Settings › General › Login Items & Extensions." = "正在等待你在“系统设置 › 通用 › 登录项与扩展”中批准。";
+"Off" = "关闭";
+"Only available for the installed app (ReadRead.app)." = "仅适用于安装后的 App（ReadRead.app）。";
+
+/* SettingsView: Voices */
+"A document is read with the voice of its language; ▶ plays a short sample at speed 1.0 (the document pauses meanwhile)." = "文稿用其语言的嗓音朗读；▶ 以 1.0 倍语速播放一小段试听（试听时文稿暂停）。";
+"The system voice is in use; these voices apply again after Use Kokoro." = "正在使用系统嗓音；选择“使用 Kokoro”后，这些嗓音会重新生效。";
+
+/* SettingsView: Reading */
+"Text size" = "文字大小";
+"%@ pt" = "%@ 磅";
+"Default" = "默认";
+"Default text size (⌘0)" = "默认文字大小（⌘0）";
+"Follow the sentence being read" = "跟随正在朗读的句子";
+"Scrolling by hand pauses following until Back to Current or the next sentence in view." = "手动滚动会暂停跟随，直到点按“回到当前”，或者下一句出现在视图中。";
+"Web pages" = "网页";
+"Read web pages" = "读取网页";
+"On this Mac first" = "优先在这台 Mac 上";
+"With defuddle.md only" = "仅使用 defuddle.md";
+"Pages are read on this Mac; if that fails, the address is sent to defuddle.md (never a local address, such as localhost, a .local name or a private IP address)." = "网页在这台 Mac 上读取；如果失败，会把网址发送给 defuddle.md（本地地址从不发送，例如 localhost、.local 名称或私有 IP 地址）。";
+"Every page address is sent to defuddle.md (local addresses, such as localhost, .local names and private IP addresses, are still read on this Mac)." = "每个网页地址都会发送给 defuddle.md（本地地址，例如 localhost、.local 名称和私有 IP 地址，仍在这台 Mac 上读取）。";
+
+/* SettingsView: Advanced */
+"Voice engine" = "语音引擎";
+"Engine" = "引擎";
+"Restart Engine" = "重新启动引擎";
+"Stop the voice engine and start it again" = "停止语音引擎，然后再次启动";
+"Files" = "文件";
+"Log" = "日志";
+"Pronunciations" = "发音";
+"Show your Chinese pronunciation file (created empty if there is none)" = "显示你的中文发音文件（如果还没有，会新建一个空文件）";
+"Article cache" = "文章缓存";
+"Web pages are kept for 30 days, so they open again at once." = "网页会保留 30 天，再次打开时立即可读。";
+"Clear Cached Articles" = "清除缓存的文章";
+
+/* StatusItem */
+"ReadRead — reading: %@" = "ReadRead — 正在朗读：%@";
+"ReadRead — paused: %@" = "ReadRead — 已暂停：%@";
+"ReadRead — %@" = "ReadRead — %@";
+"Previous Sentence" = "上一句";
+"Next Sentence" = "下一句";
+"Read Clipboard" = "朗读剪贴板";
+
+/* TTSError */
+"Voice engine files are missing:" = "缺少语音引擎文件：";
+"Could not launch the TTS server: %@" = "无法启动 TTS 服务器：%@";
+"TTS server failed to start: %@" = "TTS 服务器启动失败：%@";
+"TTS server failed" = "TTS 服务器出错";
+"TTS server exited during startup (%@)." = "TTS 服务器在启动过程中退出（%@）。";
+"TTS server did not become ready within %@ s." = "TTS 服务器在 %@ 秒内没有就绪。";
+"TTS server protocol error: %@" = "TTS 服务器协议错误：%@";
+"TTS server stopped unexpectedly (%@)." = "TTS 服务器意外停止（%@）。";
+"TTS server crashed repeatedly, so automatic restart is off. Last error: %@" = "TTS 服务器反复崩溃，已停止自动重启。最后一次错误：%@";
+"Log: %@" = "日志：%@";
+"TTS error (%@): %@" = "TTS 错误（%@）：%@";
+"TTS server returned HTTP %@." = "TTS 服务器返回了 HTTP %@。";
+"TTS server returned HTTP %@: %@" = "TTS 服务器返回了 HTTP %@：%@";
+"Could not reach the TTS server: %@" = "无法连接 TTS 服务器：%@";
+"The TTS server did not answer within %@ s." = "TTS 服务器在 %@ 秒内没有响应。";
+"Unexpected response from the TTS server: %@" = "TTS 服务器的响应无法识别：%@";
+"signal %@" = "信号 %@";
+"exit status %@" = "退出状态 %@";
+
+/* VoicePicker */
+"Choose the voice for %@ text" = "选择 %@ 文本的嗓音";
+"Voice for %@" = "%@ 嗓音";
+"Stop the preview" = "停止试听";
+"Hear %@" = "试听 %@";
+"Preview %@" = "试听 %@";
+"Speed for %@" = "%@ 语速";
+"Speed for %@ text" = "%@ 文本的语速";
+"中文 voice" = "中文嗓音";
+"English voice" = "英文嗓音";
+
+/* AppleSpeechSynthesizer, WAVDecoder */
+"Chinese (zh-CN)" = "中文（zh-CN）";
+"English (en-US)" = "英语（en-US）";
+"No %@ system voice is installed. Add one in System Settings → Accessibility → Spoken Content." = "没有安装%@系统嗓音。请在“系统设置 › 辅助功能 › 朗读内容”中添加。";
+"The system voice did not finish speaking in time." = "系统嗓音未能及时读完。";
+"The synthesized audio is not a usable WAV file (%@)." = "合成的音频不是可用的 WAV 文件（%@）。";

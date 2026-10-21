@@ -1,0 +1,65 @@
+{
+ "request_id": "p5-zh_plain",
+ "sample_rate": 24000,
+ "duration": 3.835,
+ "audio": "",
+ "silent": false,
+ "voice": "zm_009",
+ "lang": "zh",
+ "speed": 1.0,
+ "synth_speed": 1.0,
+ "sentences": [
+  {
+   "text": "今天天气很好，我们一起去公园散步吧。",
+   "start": 0.0,
+   "end": 3.835
+  }
+ ],
+ "tokens": [
+  {
+   "text": "今天天气",
+   "start": 0.09,
+   "end": 0.915
+  },
+  {
+   "text": "很好",
+   "start": 0.965,
+   "end": 1.74
+  },
+  {
+   "text": "我们",
+   "start": 1.865,
+   "end": 2.09
+  },
+  {
+   "text": "一起",
+   "start": 2.165,
+   "end": 2.59
+  },
+  {
+   "text": "去",
+   "start": 2.64,
+   "end": 2.79
+  },
+  {
+   "text": "公园",
+   "start": 2.84,
+   "end": 3.24
+  },
+  {
+   "text": "散步",
+   "start": 3.29,
+   "end": 3.64
+  },
+  {
+   "text": "吧",
+   "start": 3.665,
+   "end": 3.835
+  }
+ ],
+ "timing_ms": {
+  "frontend": 1,
+  "synth": 460
+ },
+ "input_text": "今天天气很好，我们一起去公园散步吧。"
+}

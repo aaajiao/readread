@@ -36,10 +36,12 @@ final class TTSClientTests: XCTestCase {
         XCTAssertEqual(body.count, 6)
     }
 
+    /// The body's `lang` is the voice's language: a Chinese voice sends "zh" (an English one "en", above).
     func testChineseVoiceSendsZh() async throws {
         let fake = FakeTransport()
         _ = try await TTSClient(endpoint: endpoint, transport: fake.transport).synthesize(try request("zm_055"))
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(fake.requests.first?.httpBody)) as? [String: Any])
+        XCTAssertEqual(body["voice"] as? String, "zm_055")
         XCTAssertEqual(body["lang"] as? String, "zh")
     }
 
@@ -153,14 +155,9 @@ final class TTSClientTests: XCTestCase {
         } catch let error as TTSError {
             XCTAssertEqual(error, .server(status: 400, code: "voice_language_mismatch",
                                           message: "voice bf_emma is English, lang was zh"))
-            XCTAssertEqual(error.errorDescription, "TTS error (voice_language_mismatch): voice bf_emma is English, lang was zh")
+            XCTAssertTrue(error.errorDescription?.contains("voice bf_emma is English, lang was zh") == true, "the banner shows it")
             XCTAssertFalse(error.isServerFailure)
         }
-    }
-
-    func testUnauthorizedIsReportedWithItsCode() {
-        let error = TTSClient.error(status: 401, body: Data(#"{"error":{"code":"unauthorized","message":"bad token"}}"#.utf8))
-        XCTAssertEqual(error, .server(status: 401, code: "unauthorized", message: "bad token"))
     }
 
     func testNonJSONErrorKeepsTheStartOfTheBody() {

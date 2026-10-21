@@ -8,10 +8,10 @@ enum AppleSpeechError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .noVoice(let language):
-            let name = language == .zh ? "Chinese (zh-CN)" : "English (en-US)"
-            return "No \(name) system voice is installed. Add one in System Settings → Accessibility → Spoken Content."
+            let name = language == .zh ? String(localized: "Chinese (zh-CN)") : String(localized: "English (en-US)")
+            return String(localized: "No \(name) system voice is installed. Add one in System Settings → Accessibility → Spoken Content.")
         case .timedOut:
-            return "The system voice did not finish speaking in time."
+            return String(localized: "The system voice did not finish speaking in time.")
         }
     }
 }

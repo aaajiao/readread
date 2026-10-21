@@ -35,6 +35,24 @@ kokoro-v1.0.fp16.onnx 163527961 f3a290d384fbb27966d462905c71a46cef9e5fd00516b40d
 voices-v1.0.bin 28214398 bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
 "
 
+# ── Defuddle (npm, MIT): the page reader the app runs in an offscreen web view ──
+# The npm tarball of defuddle 0.19.5. RR_DEFUDDLE_INTEGRITY is npm's dist.integrity (sha512 of the
+# tarball), checked against https://registry.npmjs.org/defuddle/0.19.5 on 2026-10-21; the sha256
+# values were computed from that verified tarball. Installed: the browser build with Markdown
+# conversion (the package's "./full" export, a UMD bundle that defines the global `Defuddle`) and the
+# license, into Contents/Resources/defuddle/ (build-app.sh) and $READREAD_HOME/defuddle/ (setup.sh).
+RR_DEFUDDLE_VERSION="0.19.5"
+RR_DEFUDDLE_TARBALL="defuddle-${RR_DEFUDDLE_VERSION}.tgz"
+RR_DEFUDDLE_URL="https://registry.npmjs.org/defuddle/-/${RR_DEFUDDLE_TARBALL}"
+RR_DEFUDDLE_SIZE=659138
+RR_DEFUDDLE_SHA256="1cbe156e923f38be0e3dc36bb22d1e20d708349b17fd26bb8136b221451f4ae4"
+RR_DEFUDDLE_INTEGRITY="sha512-WpgFv5TWA8s8bWRXMb+tosdEbdeZwgrKYw+BQiuTQfQc4XdCm69Yq/76Lzgvr0ALC1VxZcMWwjNGGgIstcxUtw=="
+# path in the tarball  bytes  sha256  installed name
+RR_DEFUDDLE_FILES="
+package/dist/index.full.js 768702 742844b87a8b1f7fe93f00dcf4ecac243444e298562433995382e23b0f0e55eb defuddle.full.js
+package/LICENSE 1076 c63e6774d9c9da3de01428e0809080c4758de3636c8e9e6fe51525c9ab4cd092 LICENSE
+"
+
 # Minimum macOS for the app (Info.plist LSMinimumSystemVersion; also the wheel target in lock-deps.sh).
 RR_MIN_MACOS="26.0"
 

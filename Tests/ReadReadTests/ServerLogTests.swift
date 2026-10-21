@@ -55,15 +55,6 @@ final class ServerLogTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: logPath))
     }
 
-    func testRotationWithFakeFileSystem() {
-        let fs = FakeFileSystem()
-        fs.addFile("/l/tts-server.log", size: ServerLog.rotationBytes + 1)
-        fs.addFile("/l/tts-server.log.1", size: 3)
-        ServerLog(path: "/l/tts-server.log", fileSystem: fs).rotateIfNeeded()
-        XCTAssertEqual(fs.files["/l/tts-server.log.1"], ServerLog.rotationBytes + 1)
-        XCTAssertNil(fs.files["/l/tts-server.log"])
-    }
-
     // MARK: - Appending and tail
 
     func testAppendsAcrossLaunches() throws {

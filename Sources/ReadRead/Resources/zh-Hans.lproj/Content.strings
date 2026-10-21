@@ -1,0 +1,73 @@
+/* ReadRead content messages (pages, files, formats), table "Content": Simplified Chinese.
+   The keys are the English text in the sources: String(localized: "…", table: "Content"). */
+
+/* AttributedTextReader.swift */
+"not a text document format" = "不是文本文档格式";
+
+/* DocumentLoader.swift */
+"Nothing to read (没有可读的内容): the text is empty, only markup, or in a language ReadRead does not read." = "没有可读的内容：文本为空、只有标记，或者是 ReadRead 不朗读的语言。";
+"%@ is on your local network, which defuddle.md cannot reach, and ReadRead's page reader (Defuddle) is not installed: run ./scripts/setup.sh, or use the app build-app.sh builds. Or copy the page's text and paste it here to read it." = "%@ 在你的本地网络上，defuddle.md 无法访问；而 ReadRead 的网页读取器（Defuddle）尚未安装：请运行 ./scripts/setup.sh，或使用 build-app.sh 构建的应用。也可以复制网页的文字，粘贴到这里朗读。";
+"ReadRead could not read the page on this Mac (%@) nor through defuddle.md (%@)." = "ReadRead 无法在这台 Mac 上读取该网页（%@），也无法通过 defuddle.md 读取（%@）。";
+
+/* DocumentReader.swift */
+"The %@ file is too large to read (%lld MB; the limit is %lld MB)." = "这个 %@ 文件太大，无法读取（%lld MB；上限为 %lld MB）。";
+"This %@ file could not be read: %@" = "无法读取这个 %@ 文件：%@";
+"This PDF is protected by a password. Open it in Preview, export a copy without the password, and open that." = "这个 PDF 受密码保护。请在“预览”中打开它，导出一份不带密码的副本，再打开那份副本。";
+"This PDF has no text, only images of pages (a scan). Recognize its text first (OCR), then open it again." = "这个 PDF 没有文字，只有页面图像（扫描件）。请先识别其中的文字（OCR），然后再打开。";
+"This EPUB is protected by DRM: ReadRead reads only books without it." = "这本 EPUB 受 DRM 保护：ReadRead 只朗读不带 DRM 的书。";
+"This EPUB file is damaged or not an EPUB: %@" = "这个 EPUB 文件已损坏或不是 EPUB：%@";
+
+/* EPUBReader.swift */
+"its entries are encrypted" = "其中的条目已加密";
+"it holds a symbolic link: %@" = "其中有符号链接：%@";
+"unsafe entry name: %@" = "不安全的条目名称：%@";
+"unpacking it took longer than two minutes" = "解压耗时超过两分钟";
+"ditto could not unpack it (status %d)" = "ditto 无法解压它（状态 %d）";
+"it unpacked a symbolic link" = "解压出了符号链接";
+"it unpacked a file outside its directory" = "解压出了目录之外的文件";
+"META-INF/container.xml is missing" = "缺少 META-INF/container.xml";
+"the package document is missing" = "缺少包文档（OPF）";
+"its spine lists no documents" = "其阅读顺序（spine）中没有任何文档";
+"its HTML could not be made well-formed" = "无法把其 HTML 整理为格式正确的文档";
+"none of the documents its spine lists are in the file" = "其阅读顺序（spine）列出的文档都不在文件中";
+"This EPUB is too large to read: its content unpacks to more than %lld MB." = "这个 EPUB 太大，无法读取：其内容解压后超过 %lld MB。";
+"it is not a ZIP archive" = "它不是 ZIP 压缩包";
+"ZIP64 archives are not supported" = "不支持 ZIP64 压缩包";
+"multi-part archives are not supported" = "不支持分卷压缩包";
+"it has more than %lld entries" = "条目超过 %lld 个";
+"its central directory is damaged" = "其中央目录已损坏";
+
+/* LocalExtractor.swift */
+"ReadRead's page reader (Defuddle) is not installed: run ./scripts/setup.sh, or use the app build-app.sh builds." = "ReadRead 的网页读取器（Defuddle）尚未安装：请运行 ./scripts/setup.sh，或使用 build-app.sh 构建的应用。";
+"The page could not be loaded: %@" = "无法加载该网页：%@";
+"The page's server answered HTTP %lld." = "该网页的服务器返回了 HTTP %lld。";
+"This link is not a web page (%@). Download the file and open it in ReadRead." = "这个链接不是网页（%@）。请下载该文件，再用 ReadRead 打开。";
+"ReadRead does not open this kind of address: %@" = "ReadRead 不打开这类地址：%@";
+"The page did not load within 15 seconds." = "网页未能在 15 秒内加载完成。";
+"The page was still loading after 15 seconds: only its first part was read." = "网页 15 秒后仍在加载：只读到了它的前一部分。";
+"The page redirected too many times." = "该网页重定向的次数太多。";
+"The web view reading the page stopped unexpectedly." = "读取网页的 Web 视图意外停止了。";
+"The page is too large to read." = "该网页太大，无法读取。";
+"Defuddle found nothing to read on the page." = "Defuddle 在该网页上没有找到可读的内容。";
+"Defuddle could not read the page: %@" = "Defuddle 无法读取该网页：%@";
+"WebKit content rules are unavailable" = "WebKit 内容规则不可用";
+"it took longer than %lld seconds" = "耗时超过 %lld 秒";
+"it returned no result" = "没有返回结果";
+
+/* PDFTextReader.swift */
+"PDFKit cannot open it" = "PDFKit 无法打开它";
+
+/* TextDecoding.swift */
+"This file is not text in an encoding ReadRead knows (UTF-8, UTF-16, GB18030/GBK, Big5 or Windows-1252)." = "这个文件不是 ReadRead 认识的编码的文本（UTF-8、UTF-16、GB18030/GBK、Big5 或 Windows-1252）。";
+"This file is Korean text (EUC-KR). Korean is not supported: ReadRead reads Chinese and English." = "这个文件是韩文文本（EUC-KR）。不支持韩文：ReadRead 朗读中文和英文。";
+"This file is Japanese text (Shift_JIS). Japanese is not supported: ReadRead reads Chinese and English." = "这个文件是日文文本（Shift_JIS）。不支持日文：ReadRead 朗读中文和英文。";
+
+/* WebExtractor.swift */
+"Invalid URL" = "无效的网址";
+"Failed to fetch content (HTTP %lld)" = "获取内容失败（HTTP %lld）";
+"defuddle.md could not extract the page: %@" = "defuddle.md 无法提取该网页：%@";
+"defuddle.md could not extract the page (HTTP %lld): %@" = "defuddle.md 无法提取该网页（HTTP %lld）：%@";
+"defuddle.md's free quota (1,000 pages a month) is used up; it reads pages again next month." = "defuddle.md 的免费额度（每月 1,000 个网页）已用完，下个月才能再读取网页。";
+"%@ (defuddle.md: %@)" = "%@（defuddle.md：%@）";
+"Failed to read file: %@" = "读取文件失败：%@";
+"The file is too large to read (%lld MB; the limit is %lld MB)." = "文件太大，无法读取（%lld MB；上限为 %lld MB）。";

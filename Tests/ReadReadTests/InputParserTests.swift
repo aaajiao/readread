@@ -28,7 +28,8 @@ final class InputParserTests: XCTestCase {
         XCTAssertEqual(parse("x.ai"), url("https://x.ai"))
         XCTAssertEqual(parse("b23.tv/AbCd"), url("https://b23.tv/AbCd"))
         XCTAssertEqual(parse("example.md/docs"), url("https://example.md/docs"), "a country code with a path")
-        XCTAssertEqual(parse("box.example:3000"), url("https://box.example:3000"), "any name with a port")
+        XCTAssertEqual(parse("box.mycorp:3000"), url("https://box.mycorp:3000"), "any name with a port")
+        XCTAssertEqual(parse("box.example:3000"), url("http://box.example:3000"), "a name reserved for local use gets http")
         XCTAssertEqual(parse("例子.中国"), .url(URL(string: "https://例子.中国")!))
         XCTAssertEqual(parse("https://zh.wikipedia.org/wiki/C语言"), .url(URL(string: "https://zh.wikipedia.org/wiki/C语言")!),
                        "a URL on its own is taken as it is")
@@ -94,5 +95,25 @@ final class InputParserTests: XCTestCase {
                        "https://[2001:db8::1]/"] {
             XCTAssertFalse(InputParser.isLocalNetwork(URL(string: remote)!), remote)
         }
+    }
+
+    /// Other spellings of local addresses (a browser reads 127.1 as 127.0.0.1) and the names
+    /// reserved for local use; public ones stay public.
+    func testEverySpellingOfALocalAddress() {
+        for local in ["http://127.1:8080/x", "http://0x7f.1/", "http://0177.0.0.1/", "http://2130706433/", "http://0x7f000001/",
+                      "http://192.168.001.010/", "http://[::ffff:192.168.1.10]/", "http://[::ffff:c0a8:010a]/", "http://[::]/",
+                      "http://[fe90::1]/", "http://[febf::1]/", "http://[fec0::1]/", "http://[fe80::1%25en0]/", "http://fritz.box/",
+                      "http://box.fritz.box/", "http://foo.test/", "http://server.localdomain/", "http://site.example/",
+                      "http://name.invalid/", "http://nas.local./", "http://mydevice./", "http://user:pw@192.168.1.10/"] {
+            XCTAssertTrue(InputParser.isLocalNetwork(URL(string: local)!), local)
+        }
+        for remote in ["http://8.8.8.8/", "http://8.8.8.8.nip.io/", "http://[::ffff:8.8.8.8]/", "http://[2606:4700::1111]/",
+                       "http://[fe00::1]/", "http://example.com/", "http://test.com/", "http://box.com/", "http://1e100.net/",
+                       "http://deadbeef.com/", "http://abc.de/"] {
+            XCTAssertFalse(InputParser.isLocalNetwork(URL(string: remote)!), remote)
+        }
+        XCTAssertEqual(InputParser.ipv4Address("127.1"), 0x7F00_0001)
+        XCTAssertNil(InputParser.ipv4Address("example.com"))
+        XCTAssertNil(InputParser.ipv4Address("cafe.be"))
     }
 }

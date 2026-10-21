@@ -2,14 +2,10 @@ import XCTest
 
 @testable import ReadRead
 
-/// Sentences and long-sentence cuts (R3-03), plus properties every chunking must have.
+/// Sentences and long-sentence cuts (R3-03); the properties every chunking must have are in
+/// TextPipelinePropertyTests.
 final class SpeechChunkerTests: XCTestCase {
     private func sentences(_ text: String) -> [String] { SpeechChunker.pieces(of: text).map(\.text) }
-    private func speakable(_ text: String) -> String {
-        String(String.UnicodeScalarView(text.unicodeScalars.filter {
-            $0.properties.isAlphabetic || $0.properties.numericType != nil
-        }))
-    }
 
     // MARK: - Chinese
 
@@ -99,28 +95,6 @@ final class SpeechChunkerTests: XCTestCase {
             XCTAssertFalse(piece.last.map { $0 == "," || $0 == ":" } ?? false, piece)
         }
         XCTAssertTrue(pieces.contains { $0.contains("1,234,567") } || pieces.contains { $0.contains("12:30") })
-    }
-
-    // MARK: - Properties
-
-    func testRangesPointAtThePieceText() throws {
-        for path in ["pages/zh_wikipedia.md", "pages/en_wikipedia.md"] {
-            let page = Frontmatter.split(try Fixtures.text(path)).body
-            for block in MarkdownCleaner.blocks(page) {
-                let characters = Array(block.text)
-                var previousEnd = 0
-                for piece in SpeechChunker.pieces(of: block.text) {
-                    XCTAssertEqual(String(characters[piece.range]), piece.text, path)
-                    XCTAssertGreaterThanOrEqual(piece.range.lowerBound, previousEnd, "in order, no overlap")
-                    previousEnd = piece.range.upperBound
-                    XCTAssertLessThanOrEqual(piece.text.count, SpeechChunker.englishCap, piece.text)
-                    XCTAssertFalse(piece.text.first!.isWhitespace || piece.text.last!.isWhitespace, piece.text)
-                }
-                // Nothing speakable is lost between the pieces.
-                let covered = SpeechChunker.pieces(of: block.text).map(\.text).joined()
-                XCTAssertEqual(speakable(covered), speakable(block.text), path)
-            }
-        }
     }
 
     // MARK: - Speak text

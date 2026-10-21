@@ -154,29 +154,62 @@ enum InputParser {
         return link
     }
 
-    /// Hosts defuddle.md cannot reach: localhost, *.local, *.lan, *.internal, *.home.arpa,
-    /// private and link-local addresses, and single-label intranet names.
+    /// Hosts defuddle.md cannot reach: localhost, *.local, *.lan, *.internal, *.home.arpa, the
+    /// names reserved for testing and documentation (*.test, *.example, *.invalid,
+    /// *.localdomain), fritz.box, private, loopback and link-local addresses (IPv4 in every
+    /// spelling a browser accepts, IPv6 with IPv4-mapped ones), and single-label intranet
+    /// names. A public-looking name that only the local DNS resolves to a private address is
+    /// not recognised.
     static func isLocalNetwork(_ url: URL) -> Bool {
         guard let rawHost = url.host(percentEncoded: false)?.lowercased(), !rawHost.isEmpty else { return false }
         let host = rawHost.hasPrefix("[") ? String(rawHost.dropFirst().dropLast()) : rawHost
         return isLocalHost(host)
     }
 
+    static let localSuffixes = [
+        ".local", ".lan", ".internal", ".intranet", ".home.arpa", ".corp", ".home", ".localdomain", ".test", ".example",
+        ".invalid", ".fritz.box",
+    ]
+
     static func isLocalHost(_ rawHost: String) -> Bool {
         let host = rawHost.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        if host == "localhost" || host.hasSuffix(".localhost") { return true }
-        for suffix in [".local", ".lan", ".internal", ".intranet", ".home.arpa", ".corp", ".home"] where host.hasSuffix(suffix) {
-            return true
-        }
-        if host.contains(":") {  // IPv6
-            return host == "::1" || host.hasPrefix("fc") || host.hasPrefix("fd") || host.hasPrefix("fe80")
-        }
-        let octets = host.split(separator: ".").map { Int($0) }
-        if octets.count == 4, octets.allSatisfy({ $0 != nil && (0...255).contains($0!) }) {
-            let a = octets[0]!, b = octets[1]!
-            return a == 10 || a == 127 || a == 0 || (a == 172 && (16...31).contains(b))
-                || (a == 192 && b == 168) || (a == 169 && b == 254) || (a == 100 && (64...127).contains(b))
-        }
+        if ["localhost", "localdomain", "fritz.box"].contains(host) || host.hasSuffix(".localhost") { return true }
+        if localSuffixes.contains(where: host.hasSuffix) { return true }
+        if host.contains(":") { return isLocalIPv6(host) }
+        if let address = ipv4Address(host) { return isLocalIPv4(address) }
         return !host.contains(".")
+    }
+
+    /// An IPv4 address the way `inet_aton` (and so a browser) reads it: 127.1, 0x7f.0.0.1,
+    /// 0177.0.0.1 and 2130706433 are all 127.0.0.1. nil for a name.
+    static func ipv4Address(_ host: String) -> UInt32? {
+        guard !host.isEmpty, host.allSatisfy({ $0.isASCII && ($0.isHexDigit || $0 == "." || $0 == "x") }) else { return nil }
+        var address = in_addr()
+        guard inet_aton(host, &address) == 1 else { return nil }
+        return UInt32(bigEndian: address.s_addr)
+    }
+
+    static func isLocalIPv4(_ address: UInt32) -> Bool {
+        let a = address >> 24, b = (address >> 16) & 0xFF
+        return a == 10 || a == 127 || a == 0 || (a == 172 && (16...31).contains(b))
+            || (a == 192 && b == 168) || (a == 169 && b == 254) || (a == 100 && (64...127).contains(b))
+    }
+
+    /// ::, ::1, unique local fc00::/7, link-local fe80::/10, site-local fec0::/10, and
+    /// IPv4-mapped or -compatible addresses of a local IPv4 one; a zone (%en0) is ignored.
+    static func isLocalIPv6(_ host: String) -> Bool {
+        let address = String(host.split(separator: "%", maxSplits: 1).first ?? "")
+        var storage = in6_addr()
+        guard inet_pton(AF_INET6, address, &storage) == 1 else { return false }
+        let bytes = withUnsafeBytes(of: storage) { Array($0) }
+        if bytes[0] & 0xFE == 0xFC { return true }
+        if bytes[0] == 0xFE, bytes[1] & 0xC0 == 0x80 || bytes[1] & 0xC0 == 0xC0 { return true }
+        guard bytes[0..<10].allSatisfy({ $0 == 0 }) else { return false }
+        let tail = bytes[12..<16].reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
+        switch (bytes[10], bytes[11]) {
+        case (0xFF, 0xFF): return isLocalIPv4(tail)  // ::ffff:a.b.c.d
+        case (0, 0): return tail <= 1 || isLocalIPv4(tail)  // ::, ::1, ::a.b.c.d
+        default: return false
+        }
     }
 }

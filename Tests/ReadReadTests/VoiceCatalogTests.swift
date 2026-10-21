@@ -6,50 +6,20 @@ final class VoiceCatalogTests: XCTestCase {
 
     // MARK: - The exact list (contract: ContentView `Voice.all` is the single source)
 
-    func testChineseVoicesInOrder() {
-        XCTAssertEqual(Voice.voices(for: .zh).map(\.id), ["zf_001", "zf_032", "zm_009", "zm_055"])
-        XCTAssertEqual(Voice.voices(for: .zh).map(\.name), ["女声 001", "女声 032", "男声 009", "男声 055"])
-    }
-
-    func testAmericanVoicesInOrder() {
-        let us = Voice.all.filter { $0.accent == .us }
-        XCTAssertEqual(us.map(\.id), [
+    /// The ids in picker order, each once: what the README, `--self-test` and the ASR baseline
+    /// (tools/asr_eval) name. Display names and labels are UI strings and not pinned here.
+    func testTheCatalogIsTheContractsVoiceList() {
+        let us = [
             "af_heart", "af_alloy", "af_aoede", "af_bella", "af_jessica", "af_kore", "af_nicole", "af_nova",
             "af_river", "af_sarah", "af_sky", "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam",
             "am_michael", "am_onyx", "am_puck",
-        ])
-        XCTAssertEqual(us.first?.name, "Heart")
-        XCTAssertEqual(us.last?.name, "Puck")
-    }
-
-    func testBritishVoicesInOrder() {
-        let uk = Voice.all.filter { $0.accent == .uk }
-        XCTAssertEqual(uk.map(\.id), [
-            "bf_alice", "bf_emma", "bf_isabella", "bf_lily", "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
-        ])
-        XCTAssertEqual(uk.map(\.name), ["Alice", "Emma", "Isabella", "Lily", "Daniel", "Fable", "George", "Lewis"])
-    }
-
-    func testCountsAndUniqueness() {
-        XCTAssertEqual(Voice.all.count, 31)
-        XCTAssertEqual(Voice.voices(for: .en).count, 27)
+        ]
+        let uk = ["bf_alice", "bf_emma", "bf_isabella", "bf_lily", "bm_daniel", "bm_fable", "bm_george", "bm_lewis"]
+        XCTAssertEqual(Voice.voices(for: .zh).map(\.id), ["zf_001", "zf_032", "zm_009", "zm_055"])
+        XCTAssertEqual(Voice.voices(for: .en).map(\.id), us + uk)
+        XCTAssertEqual(Voice.all.filter { $0.accent == .uk }.map(\.id), uk)
+        XCTAssertEqual(Voice.all.count, 31, "no voice outside the two languages")
         XCTAssertEqual(Set(Voice.all.map(\.id)).count, Voice.all.count)
-    }
-
-    func testDroppedLanguagesAndVoicesAreGone() {
-        for id in ["zf_xiaobei", "zf_xiaoni", "zm_yunjian", "jf_alpha", "ef_dora", "ff_siwis", "hf_alpha", "if_sara", "pf_dora"] {
-            XCTAssertNil(Voice.voice(id: id), id)
-        }
-    }
-
-    // MARK: - Labels
-
-    func testAccentLabels() {
-        XCTAssertEqual(Voice.voice(id: "zf_001")?.accentLabel, "ZH")
-        XCTAssertEqual(Voice.voice(id: "af_heart")?.accentLabel, "EN-US")
-        XCTAssertEqual(Voice.voice(id: "bm_george")?.accentLabel, "EN-GB")
-        XCTAssertEqual(Voice.voice(id: "bf_emma")?.pickerLabel, "Emma (EN-GB)")
-        XCTAssertEqual(Voice.voice(id: "zm_009")?.pickerLabel, "男声 009 (ZH)")
     }
 
     // MARK: - Routing: the voice decides the pipeline

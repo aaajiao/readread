@@ -1,0 +1,17 @@
+Meeting notes: reading app, 21 October
+
+Attendees: Dr. Chen, Ms. Rivera, J. Park (remote).
+
+The team reviewed the first beta. Most testers liked the voices, but a
+few said the app paused too long between paragraphs. Ms. Rivera thinks
+the pause after a heading should stay at half a second, while the pause
+between sentences could drop to a quarter.
+
+• Fix the pause after list items.
+• Read "U.S." and "e.g." correctly - both broke in build 41.
+• Check prices like $5.99 and 3.5% in the English pipeline.
+- Ask whether 二〇二四年 should be read as a year.
+
+Next meeting: Tuesday at 10:30. Agenda at https://wiki.example.com/meetings/2024-10-28 (internal).
+
+P.S. Thanks to everyone who sent recordings! 🎙️

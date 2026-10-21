@@ -37,6 +37,10 @@ final class PlaybackController {
     /// Counts failures, so a dismissed banner comes back for the next one.
     private(set) var failureCount = 0
     private(set) var settings = PlaybackSettings()
+    /// The word timings of the unit loaded in the output (playing or paused), placed on its
+    /// display text; nil before its audio plays and for an engine without token timings (the
+    /// reading view then highlights the sentence alone).
+    private(set) var wordTimeline: LoadedWordTimeline?
     /// Changes whenever a real duration replaces an estimate, so `progress` is re-read.
     private var durationRevision = 0
 
@@ -57,7 +61,11 @@ final class PlaybackController {
     @ObservationIgnored private var inFlight: InFlight?
     @ObservationIgnored private var requestCounter = 0
     /// The unit loaded in the output (playing or paused), and the speed its audio was made at.
-    @ObservationIgnored private var loadedUnit: Int?
+    @ObservationIgnored private var loadedUnit: Int? {
+        didSet {
+            if let wordTimeline, wordTimeline.unit != loadedUnit { self.wordTimeline = nil }
+        }
+    }
     @ObservationIgnored private var loadedSynthSpeed = 1.0
     /// Playing or buffering, as opposed to paused/stopped.
     @ObservationIgnored private var wantsPlayback = false
@@ -99,6 +107,10 @@ final class PlaybackController {
 
     var engineStatus: SpeechEngineStatus { synthesizer.status }
 
+    /// Seconds into the loaded unit's audio, in synthesized time (the time token timings use).
+    /// Not observed: the reading view samples it while the unit plays.
+    var playbackTime: Double { output.currentTime }
+
     /// Readable units (the ones with a language), for "x / N".
     var readableCount: Int { document?.units.lazy.filter { $0.language != nil }.count ?? 0 }
 
@@ -125,8 +137,11 @@ final class PlaybackController {
         return progressShown
     }
 
-    /// Open `document` at its saved position (when the content hash still matches).
+    /// Open `document` at its saved position (when the content hash still matches). A document
+    /// still open (a drop, the clipboard or Services replace it) gets its position saved first, as
+    /// `close()` would; one read to the end has none.
     func open(_ document: ReadingDocument, settings: PlaybackSettings, autoplay: Bool) {
+        if self.document != nil, state != .finished { savePositionNow() }
         tearDown()
         cache.removeAll()
         failedPrefetches.removeAll()
@@ -483,6 +498,9 @@ final class PlaybackController {
         }
         loadedUnit = currentUnit
         loadedSynthSpeed = result.synthSpeed
+        wordTimeline = result.tokens.isEmpty ? nil : LoadedWordTimeline(
+            unit: currentUnit,
+            timeline: WordTimeline(tokens: result.tokens, displayText: document.displayText(of: unit)))
         setState(.playing)
         pump()
     }
@@ -721,4 +739,10 @@ final class PlaybackController {
         positions.save(ReadingPosition(unit: currentUnit, contentHash: document.contentHash, date: now()),
                        for: document.positionKey)
     }
+}
+
+/// A unit's word timeline, with the unit it belongs to.
+struct LoadedWordTimeline: Equatable, Sendable {
+    let unit: Int
+    let timeline: WordTimeline
 }

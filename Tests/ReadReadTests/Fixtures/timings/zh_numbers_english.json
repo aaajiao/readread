@@ -1,0 +1,115 @@
+{
+ "request_id": "p5-zh_numbers_english",
+ "sample_rate": 24000,
+ "duration": 6.845,
+ "audio": "",
+ "silent": false,
+ "voice": "zf_001",
+ "lang": "zh",
+ "speed": 1.0,
+ "synth_speed": 1.0,
+ "sentences": [
+  {
+   "text": "二零二四年十月二十一日，我在iPhone上用ReadRead读了三篇文章，一共花了十二点五元。",
+   "start": 0.0,
+   "end": 6.845
+  }
+ ],
+ "tokens": [
+  {
+   "text": "二零二",
+   "start": 0.165,
+   "end": 0.615
+  },
+  {
+   "text": "四年",
+   "start": 0.665,
+   "end": 1.015
+  },
+  {
+   "text": "十月",
+   "start": 1.065,
+   "end": 1.39
+  },
+  {
+   "text": "二十一日",
+   "start": 1.465,
+   "end": 2.39
+  },
+  {
+   "text": "我",
+   "start": 2.465,
+   "end": 2.54
+  },
+  {
+   "text": "在",
+   "start": 2.565,
+   "end": 2.715
+  },
+  {
+   "text": "iPhone",
+   "start": 2.765,
+   "end": 3.09
+  },
+  {
+   "text": "上用",
+   "start": 3.14,
+   "end": 3.465
+  },
+  {
+   "text": "ReadRead",
+   "start": 3.515,
+   "end": 3.865
+  },
+  {
+   "text": "读",
+   "start": 3.915,
+   "end": 4.04
+  },
+  {
+   "text": "了",
+   "start": 4.065,
+   "end": 4.14
+  },
+  {
+   "text": "三篇",
+   "start": 4.19,
+   "end": 4.54
+  },
+  {
+   "text": "文章",
+   "start": 4.615,
+   "end": 5.14
+  },
+  {
+   "text": "一共",
+   "start": 5.24,
+   "end": 5.515
+  },
+  {
+   "text": "花",
+   "start": 5.565,
+   "end": 5.74
+  },
+  {
+   "text": "了",
+   "start": 5.765,
+   "end": 5.89
+  },
+  {
+   "text": "十二点",
+   "start": 5.94,
+   "end": 6.415
+  },
+  {
+   "text": "五元",
+   "start": 6.49,
+   "end": 6.845
+  }
+ ],
+ "timing_ms": {
+  "frontend": 4,
+  "synth": 791
+ },
+ "input_text": "2024年10月21日，我在iPhone上用ReadRead读了3篇文章，一共花了12.5元。"
+}

@@ -1,8 +1,11 @@
 import AVFoundation
 import Foundation
 
-/// `ReadRead --self-test`: headless end-to-end check of the voice engine through
-/// the real lifecycle code. Starts the server, checks that every `Voice.all` id is
+/// `ReadRead --self-test`: headless end-to-end check of the page reader and the voice
+/// engine through the real code. First the installed Defuddle build (the bundle's, else
+/// `$READREAD_HOME/defuddle`) reads a page held in memory in an offscreen web view, as the
+/// app reads a web page on this Mac (no network, no page scripts), and the text pipeline
+/// makes its document. Then it starts the server, checks that every `Voice.all` id is
 /// in the server's `GET /voices` for its language, synthesizes one zh (zf_001),
 /// one US English (af_heart) and one UK English (bf_emma) text, reads a zh + en
 /// Markdown fixture through the text pipeline and plays its first three units back to
@@ -12,7 +15,9 @@ import Foundation
 /// fallback) and digits; every word must come back timed, the audio must be about
 /// as long as a known-good build makes it, and the server log must show no broken
 /// espeak-ng data. Nothing is written outside the log and cache directories (no reading
-/// positions). Exit status 0 on success, 1 otherwise. Diagnostics go to stderr.
+/// positions; the web view's content rules go to `<cache>/webkit-rules`). Exit status 0 on
+/// success, 1 otherwise. Diagnostics go to stderr. main.swift runs the main run loop for it
+/// (WebKit needs one; `dispatchMain()` would starve the web view).
 @MainActor
 enum SelfTest {
     struct Case {
@@ -70,6 +75,22 @@ enum SelfTest {
     static let logMarkers = ["Can't read dictionary file", "words count mismatch"]
     static let overallTimeout: Duration = .seconds(300)
 
+    /// The page reader check's page (`LocalExtractor.read(html:)`: loaded without a base URL,
+    /// its scripts off, every network load blocked).
+    static let extractionHTML = """
+        <html lang="en"><head><title>Self Test</title></head><body><article><h1>Self Test</h1>
+        <p>ReadRead reads this sentence on this Mac, with the bundled Defuddle and nothing from the network.</p>
+        <p>It is a second sentence in a second paragraph.</p></article></body></html>
+        """
+    static let extractionTitle = "Self Test"
+    /// The units the page must become: the title (Defuddle drops the heading that repeats it),
+    /// then the two sentences, all English.
+    static let extractionUnits = [
+        "Self Test.",
+        "ReadRead reads this sentence on this Mac, with the bundled Defuddle and nothing from the network.",
+        "It is a second sentence in a second paragraph.",
+    ]
+
     struct CaseResult: Encodable {
         let voice: String
         let lang: String
@@ -125,6 +146,19 @@ enum SelfTest {
         var error: String?
     }
 
+    /// `extractionHTML` read on this Mac and turned into a document.
+    struct ExtractionCheck: Encodable {
+        var ok = false
+        /// The Defuddle build that read it: `Contents/Resources/defuddle/defuddle.full.js` in the
+        /// app, else `$READREAD_HOME/defuddle/defuddle.full.js`.
+        var script: String?
+        var ms = 0
+        var title: String?
+        /// The speak texts of the document made of the page.
+        var units: [String] = []
+        var error: String?
+    }
+
     struct Report: Encodable {
         var ok = false
         var mode = "self-test"
@@ -132,6 +166,7 @@ enum SelfTest {
         var gitDescribe = Bundle.main.infoDictionary?["ReadReadGitDescribe"] as? String
         var paths: Paths?
         var log: String?
+        var extraction: ExtractionCheck?
         var server: ServerInfo?
         var health: HealthInfo?
         var catalog: CatalogCheck?
@@ -170,6 +205,13 @@ enum SelfTest {
     }
 
     private static func perform(server: TTSServerProcess, service: TTSService, box: ReportBox) async {
+        // The page reader needs no server: checked first, reported even when the server fails.
+        diagnostic("reading a page with Defuddle in an offscreen web view…")
+        let extraction = await checkExtraction()
+        box.report.extraction = extraction
+        diagnostic("page reader: \(extraction.ok ? "ok" : "FAILED") in \(extraction.ms) ms"
+            + (extraction.script.map { " with \($0)" } ?? "") + (extraction.error.map { " – \($0)" } ?? ""))
+
         let clock = ContinuousClock()
         let started = clock.now
         let logOffset = LocalFileSystem().fileSize(atPath: server.logPath) ?? 0
@@ -257,9 +299,42 @@ enum SelfTest {
         box.report.stopped = server.phase == .stopped
         box.report.childExited = server.lastExit?.pid == endpoint.pid && childrenExited(server: server)
         box.report.ok = box.report.error == nil && healthOK && catalogOK
+            && box.report.extraction?.ok == true
             && box.report.results.count == cases.count && box.report.results.allSatisfy(\.ok)
             && box.report.playback?.ok == true
             && box.report.logProblems.isEmpty && box.report.stopped && box.report.childExited
+    }
+
+    /// Read `extractionHTML` with the installed Defuddle build (`DefuddleBundle`) as the app
+    /// reads a web page on this Mac (`LocalExtractor`, an offscreen web view), then build its
+    /// document: it must come out as `extractionUnits`.
+    static func checkExtraction(context: TTSServerPaths.Context = .live()) async -> ExtractionCheck {
+        var check = ExtractionCheck()
+        guard let defuddle = DefuddleBundle.locate(context) else {
+            check.error = message(for: LocalExtractorError.bundleMissing)
+            return check
+        }
+        check.script = defuddle.url.path(percentEncoded: false)
+        let options = LocalExtractor.liveOptions(environment: context.environment, homeDirectory: context.homeDirectory)
+        let clock = ContinuousClock()
+        let begin = clock.now
+        do {
+            let page = try await LocalExtractor.read(html: extractionHTML, script: defuddle.source, options: options)
+            check.ms = milliseconds(clock.now - begin)
+            check.title = page.title
+            let document = DocumentBuilder.fromMarkdown(page.markdown, title: page.title, source: .text, sourceLabel: "")
+            check.units = document.units.map(\.speakText)
+            check.ok = page.title == extractionTitle && check.units == extractionUnits
+                && document.units.allSatisfy { $0.language == .en }
+            if !check.ok {
+                check.error = "the page became \(check.units) (title \(page.title ?? "none"), languages "
+                    + "\(document.units.map { $0.language?.rawValue ?? "-" }))"
+            }
+        } catch {
+            check.ms = milliseconds(clock.now - begin)
+            check.error = message(for: error)
+        }
+        return check
     }
 
     /// Build the fixture document, synthesize its first `playedUnits` units and play them

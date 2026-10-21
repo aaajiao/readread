@@ -230,7 +230,152 @@ cat >"$CONTENTS/Info.plist" <<PLIST
     <dict>
         <key>NSAllowsLocalNetworking</key>
         <true/>
+        <!-- The page reader's web view (LocalExtractor) opens http:// pages as a browser does;
+             without this, ATS refuses them (NSURLErrorDomain -1022) and they go to defuddle.md.
+             URLSession (defuddle.md, the TTS server on 127.0.0.1) stays under ATS. -->
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <true/>
     </dict>
+    <!-- v0.4.0 UI (P5): localizations, the Services item, the document types. -->
+    <!-- English is the development language; zh-Hans.lproj holds the translations (see the copy step below). -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+    </array>
+    <!-- Services: AppDelegate.readAloud(_:userData:error:) reads the selected text or link aloud.
+         NSRequiredContext is an empty dictionary (no filtering): without the key the system registers
+         the service but does not show it in the Services menu. zh-Hans.lproj/ServicesMenu.strings
+         translates the title. -->
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Read Aloud with ReadRead</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>readAloud</string>
+            <key>NSPortName</key>
+            <string>ReadRead</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>public.utf8-plain-text</string>
+                <string>public.url</string>
+            </array>
+            <key>NSRequiredContext</key>
+            <dict/>
+        </dict>
+    </array>
+    <!-- One entry per ReadableFileType identifier (InfoPlistTests keeps them equal), rank Alternate:
+         ReadRead is listed under Open With and never becomes the default app. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Plain Text</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>public.plain-text</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Markdown</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>net.daringfireball.markdown</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>HTML</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>public.html</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Rich Text</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>public.rtf</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Rich Text with Attachments</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>com.apple.rtfd</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Word Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>org.openxmlformats.wordprocessingml.document</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Word 97-2004 Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>com.microsoft.word.doc</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>OpenDocument Text</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>org.oasis-open.opendocument.text</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>PDF Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>com.adobe.pdf</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>EPUB Book</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>org.idpf.epub-container</string></array>
+        </dict>
+    </array>
+    <!-- end v0.4.0 UI (P5) -->
 </dict>
 </plist>
 PLIST
@@ -240,6 +385,28 @@ rr_note "Info.plist: $SHORT_VERSION ($BUILD_NUMBER), $GIT_DESCRIBE, macOS >= $RR
 for icon in $ICONS; do
     cp "$ICON_SRC/$icon" "$RES/$icon"
 done
+
+# ── v0.4.0 UI (P5): localizations ───────────────────────────────────
+# Sources/ReadRead/Resources/<language>.lproj/*.strings → Contents/Resources/<language>.lproj/, where
+# Bundle.main finds them (no SwiftPM resources). English needs no folder: it is the development
+# language, so a lookup that finds nothing shows the key. Each file must lint as a property list.
+LPROJ_SRC="$RR_REPO_DIR/Sources/ReadRead/Resources"
+[ -f "$LPROJ_SRC/zh-Hans.lproj/Localizable.strings" ] ||
+    rr_die "missing $LPROJ_SRC/zh-Hans.lproj/Localizable.strings (the Chinese UI strings)"
+LPROJ_COPIED=""
+for lproj in "$LPROJ_SRC"/*.lproj; do
+    [ -d "$lproj" ] || continue
+    lproj_name=$(basename "$lproj")
+    mkdir -p "$RES/$lproj_name"
+    for strings in "$lproj"/*.strings; do
+        [ -f "$strings" ] || continue
+        plutil -lint "$strings" >/dev/null || rr_die "$strings is not a valid strings file (plutil -lint)"
+        cp "$strings" "$RES/$lproj_name/"
+        LPROJ_COPIED="$LPROJ_COPIED $lproj_name/$(basename "$strings")"
+    done
+done
+rr_note "localizations:$LPROJ_COPIED"
+# ── end v0.4.0 UI (P5) ───────────────────────────────────────────────
 
 # Python: the statically linked interpreter plus lib/python3.12 (libpython3.12.dylib, Tcl/Tk,
 # headers and the pip-generated bin/ scripts are not needed to run the server).
@@ -309,6 +476,19 @@ for name in $(rr_model_names); do
     rr_clone_file "$MODEL_CACHE/$name" "$RES/models/$name" >/dev/null
 done
 rr_note "models: $(rr_model_names | tr '\n' ' ')"
+
+# ── Defuddle page reader (download, verify, copy) ────────────────────
+# The pinned npm build (scripts/lib/versions.sh, RR_DEFUDDLE_*) the app injects into an offscreen
+# web view to read pages on this Mac: the tarball is cached in build/cache/downloads (sha256 and npm's
+# sha512 integrity checked), and Contents/Resources/defuddle/ gets exactly defuddle.full.js and
+# LICENSE, each checked against its pinned sha256. smoke-test.sh checks them again in the bundle.
+rr_require_cmds openssl
+# shellcheck source=lib/defuddle.sh
+. "$SCRIPT_DIR/lib/defuddle.sh"
+rr_install_defuddle "$RES/defuddle"
+rr_defuddle_installed "$RES/defuddle" || rr_die "$RES/defuddle does not hold exactly the pinned Defuddle files"
+rr_note "defuddle: $RR_DEFUDDLE_VERSION ($(cd "$RES/defuddle" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' '))"
+# ── end of the Defuddle block ────────────────────────────────────────
 
 # ── 6. Precompile bytecode with the bundled interpreter ──────────────
 # unchecked-hash .pyc files stay valid whatever the mtimes (zip/copy), and the server runs with -B,

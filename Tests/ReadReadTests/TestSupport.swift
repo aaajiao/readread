@@ -543,3 +543,150 @@ extension XCTestCase {
         return directory
     }
 }
+
+// MARK: - App fakes (milestone v0.4.0)
+
+/// The clipboard in memory.
+@MainActor
+final class FakePasteboard: PasteboardAccess {
+    var items = PasteboardItems()
+    private(set) var written: [String] = []
+
+    func readItems() -> PasteboardItems { items }
+    func write(_ string: String) { written.append(string) }
+}
+
+/// Finder and the default apps, recorded.
+@MainActor
+final class FakeWorkspace: WorkspaceOpening {
+    private(set) var opened: [URL] = []
+    private(set) var revealed: [URL] = []
+
+    func open(_ url: URL) { opened.append(url) }
+    func reveal(_ url: URL) { revealed.append(url) }
+}
+
+/// Launch at login without SMAppService.
+@MainActor
+final class FakeLoginItem: LoginItemControlling {
+    var status: LoginItemStatus = .disabled
+    /// What `status` becomes once enabled (the system may want an approval first).
+    var statusWhenEnabled: LoginItemStatus = .enabled
+    var error: (any Error)?
+    private(set) var requests: [Bool] = []
+    private(set) var settingsOpened = 0
+
+    func setEnabled(_ enabled: Bool) throws {
+        requests.append(enabled)
+        if let error { throw error }
+        status = enabled ? statusWhenEnabled : .disabled
+    }
+
+    func openSystemSettings() { settingsOpened += 1 }
+}
+
+/// The app delegate's side of `AppShell`, recorded.
+@MainActor
+final class FakeShell: AppShell {
+    enum Call: Equatable {
+        case showPanel, hidePanel, showSettings, activateApp, quit
+    }
+
+    private(set) var calls: [Call] = []
+
+    func showPanel() { calls.append(.showPanel) }
+    func hidePanel() { calls.append(.hidePanel) }
+    func showSettings() { calls.append(.showSettings) }
+    func activateApp() { calls.append(.activateApp) }
+    func quit() { calls.append(.quit) }
+}
+
+/// Stands in for `DocumentLoader.load` in the app tests: text and files become documents through
+/// `DocumentBuilder` (as the loader does), web pages are Markdown registered per URL; a URL can be
+/// held until released, and any input can fail once.
+final class FakeDocumentLoader: Sendable {
+    struct Page: Sendable {
+        let title: String?
+        let markdown: String
+        let domain: String
+    }
+
+    private struct State {
+        var pages: [String: Page] = [:]
+        var held: Set<String> = []
+        /// By `String(describing:)` of the input.
+        var failures: [String: any Error] = [:]
+        var inputs: [ReadingInput] = []
+        var cancelled: [ReadingInput] = []
+    }
+
+    private let state = Mutex(State())
+
+    /// Every input asked for, in order.
+    var inputs: [ReadingInput] { state.withLock { $0.inputs } }
+    var urlCalls: [URL] {
+        inputs.compactMap { if case .url(let url) = $0 { url } else { nil } }
+    }
+    var cancelled: [ReadingInput] { state.withLock { $0.cancelled } }
+
+    func set(_ markdown: String, title: String?, domain: String, for url: String) {
+        state.withLock { $0.pages[url] = Page(title: title, markdown: markdown, domain: domain) }
+    }
+
+    func hold(_ url: String) { _ = state.withLock { $0.held.insert(url) } }
+    func release(_ url: String) { _ = state.withLock { $0.held.remove(url) } }
+
+    /// The next load of `input` throws `error`.
+    func fail(_ input: ReadingInput, with error: any Error) {
+        state.withLock { $0.failures[String(describing: input)] = error }
+    }
+
+    var load: @Sendable (ReadingInput) async throws -> ReadingDocument {
+        { [self] input in try await self.document(for: input) }
+    }
+
+    func document(for input: ReadingInput) async throws -> ReadingDocument {
+        state.withLock { $0.inputs.append(input) }
+        if case .url(let url) = input {
+            do {
+                while state.withLock({ $0.held.contains(url.absoluteString) }) { try await Task.sleep(for: .milliseconds(1)) }
+            } catch {
+                state.withLock { $0.cancelled.append(input) }
+                throw error
+            }
+        }
+        if let error = state.withLock({ $0.failures.removeValue(forKey: String(describing: input)) }) { throw error }
+        try Task.checkCancellation()
+        switch input {
+        case .url(let url):
+            guard let page = state.withLock({ $0.pages[url.absoluteString] }) else { throw URLError(.fileDoesNotExist) }
+            return DocumentBuilder.fromMarkdown(page.markdown, title: page.title, source: .url(url), sourceLabel: page.domain)
+        case .file(let url):
+            let text = try String(contentsOf: url, encoding: .utf8)
+            return DocumentBuilder.fromPlainText(text, title: nil, source: .file(url), sourceLabel: url.lastPathComponent)
+        case .text(let text):
+            return DocumentBuilder.fromPlainText(text, title: nil, source: .text, sourceLabel: "")
+        }
+    }
+}
+
+/// A plain document: one paragraph block per entry, its sentences split at the given texts.
+func makeDocument(_ paragraphs: [[(String, SpeechLanguage?)]], title: String = "Title",
+                  source: DocumentSource = .text, sourceLabel: String = "") -> ReadingDocument {
+    var blocks: [ReadingBlock] = []
+    var units: [SpeechUnit] = []
+    for (blockIndex, sentences) in paragraphs.enumerated() {
+        var text = ""
+        let first = units.count
+        for (offset, (sentence, language)) in sentences.enumerated() {
+            if offset > 0 { text += " " }
+            let start = text.count
+            text += sentence
+            units.append(SpeechUnit(id: units.count, block: blockIndex, range: start..<text.count, speakText: sentence,
+                                    language: language, kind: .sentence, endsBlock: offset == sentences.count - 1))
+        }
+        blocks.append(ReadingBlock(kind: .paragraph, text: text, units: first..<units.count))
+    }
+    return ReadingDocument(title: title, source: source, sourceLabel: sourceLabel, blocks: blocks, units: units,
+                           detectedLanguage: units.first?.language ?? .zh)
+}

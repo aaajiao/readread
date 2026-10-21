@@ -1,10 +1,11 @@
 import Foundation
 
 /// Bytes of a local text file → text (H10, R4-05). A byte-order mark decides first; then
-/// UTF-16 by its NUL bytes; then UTF-8, strict or with a few bad sequences; then the legacy
-/// encodings Chinese and Western files come in (GB18030, Big5, UTF-16 with few NULs,
-/// Windows-1252), each scored so that the plausible reading wins. CRLF and CR become LF, the
-/// BOM is dropped and control characters go (see `sanitize`).
+/// UTF-16 by its NUL bytes; then UTF-8, strict or with a few bad sequences; then Korean and
+/// Japanese files are refused (see `unsupportedLanguage`); then the legacy encodings Chinese and
+/// Western files come in (GB18030, Big5, UTF-16 with few NULs, Windows-1252), each scored so that
+/// the plausible reading wins. CRLF and CR become LF, the BOM is dropped and control characters
+/// go (see `sanitize`).
 enum TextDecoding {
     struct Decoded: Equatable, Sendable {
         let text: String
@@ -16,10 +17,27 @@ enum TextDecoding {
     enum Failure: LocalizedError, Equatable {
         /// No candidate gives plausible text (binary data, or an encoding ReadRead doesn't know).
         case notText
+        /// Korean or Japanese text in its legacy encoding, which GB18030 would turn into
+        /// nonsense Chinese: refused, ReadRead reads Chinese and English only.
+        case unsupportedLanguage(Language)
+
+        enum Language: String, Sendable {
+            case korean
+            case japanese
+        }
 
         var errorDescription: String? {
-            "This file is not text in an encoding ReadRead knows "
-                + "(UTF-8, UTF-16, GB18030/GBK, Big5 or Windows-1252)."
+            switch self {
+            case .notText:
+                String(localized: "This file is not text in an encoding ReadRead knows (UTF-8, UTF-16, GB18030/GBK, Big5 or Windows-1252).",
+                       table: "Content")
+            case .unsupportedLanguage(.korean):
+                String(localized: "This file is Korean text (EUC-KR). Korean is not supported: ReadRead reads Chinese and English.",
+                       table: "Content")
+            case .unsupportedLanguage(.japanese):
+                String(localized: "This file is Japanese text (Shift_JIS). Japanese is not supported: ReadRead reads Chinese and English.",
+                       table: "Content")
+            }
         }
     }
 
@@ -49,17 +67,48 @@ enum TextDecoding {
             return Decoded(text: sanitize(text), encoding: "utf-8")
         }
         if let text = mostlyUTF8(data) { return Decoded(text: sanitize(text), encoding: "utf-8") }
+        if let language = unsupportedLanguage(data) { throw Failure.unsupportedLanguage(language) }
         var best: (decoded: Decoded, score: Double)?
+        var big5Reading: Decoded?
         for (encoding, name) in candidates(for: data) {
             guard let text = String(data: data, encoding: encoding) else { continue }
             let value = score(text)
+            if encoding == big5, value == best?.score, best?.decoded.encoding == "gb18030" {
+                big5Reading = Decoded(text: text, encoding: name)
+            }
             // Ties keep the earlier candidate (the order above is the order of likelihood).
             if best == nil || value > best!.score {
                 best = (Decoded(text: text, encoding: name), value)
             }
         }
-        guard let best, best.score >= minimumScore else { throw Failure.notText }
+        guard var best, best.score >= minimumScore else { throw Failure.notText }
+        // A tie between GB18030 and Big5: short Big5 without punctuation reads as Han characters
+        // either way (點符號 is 翴才腹 in GB18030). Big5 wins when the GB18030 reading has more
+        // rare characters.
+        if let big5Reading, best.decoded.encoding == "gb18030",
+           rareCharacters(in: best.decoded.text) > rareCharacters(in: big5Reading.text) {
+            best.decoded = big5Reading
+        }
         return Decoded(text: sanitize(best.decoded.text), encoding: best.decoded.encoding)
+    }
+
+    /// Han characters (of the first 2,000) that are neither GB2312 level 1 (the 3,755 common
+    /// simplified ones) nor Big5's 5,401 frequent ones: 翴 from Big5's 點 is one; 種, a
+    /// traditional character in GBK, is not (it is a frequent Big5 one). Only for ties.
+    static func rareCharacters(in text: String) -> Int {
+        var rare = 0
+        let han = text.unicodeScalars.lazy.filter {
+            (0x4E00...0x9FFF).contains($0.value) || (0x3400...0x4DBF).contains($0.value) || (0xF900...0xFAFF).contains($0.value)
+        }
+        for scalar in han.prefix(2_000) {
+            let character = String(scalar)
+            if let bytes = character.data(using: gb18030).map(Array.init), bytes.count == 2,
+               (0xB0...0xD7).contains(bytes[0]), (0xA1...0xFE).contains(bytes[1]) { continue }
+            if let bytes = character.data(using: big5).map(Array.init), bytes.count == 2,
+               (0xA4...0xC6).contains(bytes[0]) { continue }
+            rare += 1
+        }
+        return rare
     }
 
     /// CRLF and lone CR → LF (R5-13: CRLF files otherwise break frontmatter and paragraphs).
@@ -146,6 +195,117 @@ enum TextDecoding {
             index += 2
         }
         return pairs >= 8 && extensionArea * 10 > pairs * 6
+    }
+
+    // MARK: - Korean and Japanese
+
+    /// CP949 (Windows' superset of EUC-KR) and CP932 (Windows' Shift_JIS).
+    static let cp949 = encoding(.dosKorean)
+    static let cp932 = encoding(.dosJapanese)
+    /// Bytes looked at to recognize Korean or Japanese.
+    static let languageSampleBytes = 64 * 1024
+
+    /// Korean and Japanese files in their legacy encodings, which GB18030 decodes into Chinese
+    /// characters that score as plausible text (EUC-KR's Hangul land on common GB2312 ones).
+    /// Japanese first: its kana are unambiguous.
+    static func unsupportedLanguage(_ data: Data) -> Failure.Language? {
+        let sample = languageSample(data)
+        if looksJapanese(sample) { return .japanese }
+        if looksKorean(sample) { return .korean }
+        return nil
+    }
+
+    /// The first `languageSampleBytes` bytes, cut after a line feed: no legacy CJK encoding uses 0x0A
+    /// inside a character, so the cut never splits one.
+    static func languageSample(_ data: Data) -> Data {
+        guard data.count > languageSampleBytes else { return data }
+        let head = data.prefix(languageSampleBytes)
+        guard let newline = head.lastIndex(of: 0x0A) else { return head }
+        return head[...newline]
+    }
+
+    /// Shift_JIS with kana in it: Japanese text has kana in nearly every sentence, and GBK and
+    /// Big5 never decode to them (Shift_JIS keeps kana under lead bytes 0x82 and 0x83, which
+    /// GB2312 and Big5 text never has and GBK only for a few rare characters). Kanji-only text
+    /// is Japanese when it is mostly GBK's rare-character area (`mostlyGBKExtension`); a few
+    /// kanji alone stay ambiguous and are read as Chinese.
+    static func looksJapanese(_ data: Data) -> Bool {
+        guard let text = String(data: data, encoding: cp932) else { return false }
+        var kana = 0, kanji = 0, halfwidthKana = 0
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x3041...0x3096, 0x30A1...0x30FA, 0x30FC: kana += 1
+            case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0xF900...0xFAFF: kanji += 1
+            case 0xFF61...0xFF9F: halfwidthKana += 1  // what GBK's lead bytes 0xA1–0xDF become
+            default: break
+            }
+        }
+        if kana >= 2, kana * 5 >= kana + kanji, halfwidthKana < kana { return true }
+        return kanji >= 8 && halfwidthKana == 0 && mostlyGBKExtension(data)
+    }
+
+    /// The most frequent Hangul syllables (particles, endings, common words).
+    static let frequentHangul = Set(
+        "이다는의에하고을가를지기서로한사으어아리나도대일인자수시것들정게해전주제있었면적부그요만니과와라화국장상성회경우원공동보습했할합된되없않"
+            .unicodeScalars)
+
+    /// Syllables Korean words end in: particles (은 는 이 을 를 의 에 로 과 께) and endings (고 다
+    /// 요 면 지 게 니 까 네 한 기 음 해 라 자). Not 가 서 도 와 야 할 된 던 and the like: as GBK
+    /// they are 啊 辑 档 客 具 且 等 带, which end common Chinese words (好啊 编辑 文档 博客 工具).
+    static let wordEndings = Set("은는이을를의에로과께고다요면지게니까네한기음해라자".unicodeScalars)
+    /// Below this many Hangul syllables, Korean also needs its particles and endings (`looksKorean`).
+    static let shortKoreanSample = 40
+
+    /// EUC-KR / CP949 Korean: CP949 decodes it into Hangul syllables, with no user-defined
+    /// characters (GB2312's common 上 生 少 … are in EUC-KR's user-defined row) and few Hanja,
+    /// spaced into words (Korean puts a space between words, Chinese none between characters),
+    /// most of them frequent syllables (Chinese read as CP949 gives rare ones). A short sample
+    /// (under `shortKoreanSample` syllables) also needs one word in four (of two or more
+    /// syllables) to end in a particle or an ending (`wordEndings`): GB2312's rows for pinyin a
+    /// to r are EUC-KR's Hangul rows, so short Chinese spaced into words can read as Korean
+    /// (快乐 老家 客人 父母 is 우있 일소 와훙 만캡), but its words end in other syllables.
+    /// Checked on the Chinese fixtures, Wikipedia text cut into pieces of 2 to 80 characters
+    /// and spaced lists of 2 to 50 Chinese words (all of them Hangul under CP949, too),
+    /// simplified and traditional, in GBK and Big5: none passes. Short Korean stays ambiguous
+    /// and is read as (nonsense) Chinese: one word always, two words more often than not,
+    /// three or four words sometimes, and words without particles (a list of nouns).
+    static func looksKorean(_ data: Data) -> Bool {
+        guard let text = String(data: data, encoding: cp949) else { return false }
+        var hangul = 0, hanja = 0, privateUse = 0, frequent = 0, spaced = 0
+        // Words of two or more syllables, and those ending in a particle or an ending.
+        var words = 0, endings = 0, syllables = 0
+        var before: Unicode.Scalar = "\n", previous: Unicode.Scalar = "\n"
+        func isHangul(_ scalar: Unicode.Scalar) -> Bool { (0xAC00...0xD7A3).contains(scalar.value) }
+        func endWord() {
+            if syllables >= 2 {
+                words += 1
+                if wordEndings.contains(previous) { endings += 1 }
+            }
+            syllables = 0
+        }
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0xAC00...0xD7A3:
+                hangul += 1
+                syllables += 1
+                if frequentHangul.contains(scalar) { frequent += 1 }
+                if previous == " ", isHangul(before) { spaced += 1 }
+            case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0xF900...0xFAFF:
+                hanja += 1
+                endWord()
+            case 0xE000...0xF8FF:
+                privateUse += 1
+                endWord()
+            default:
+                endWord()
+            }
+            before = previous
+            previous = scalar
+        }
+        endWord()
+        guard privateUse == 0, hangul >= 6, hangul >= 3 * hanja, spaced * 12 >= hangul, frequent * 10 >= hangul * 4
+        else { return false }
+        return hangul >= shortKoreanSample || (endings >= 1 && endings * 4 >= words)
     }
 
     /// NUL bytes in the first 64 KB, at even and at odd offsets.

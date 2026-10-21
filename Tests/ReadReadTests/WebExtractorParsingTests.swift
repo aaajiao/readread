@@ -32,6 +32,20 @@ final class WebExtractorParsingTests: XCTestCase {
                        "https://defuddle.md/example.com/a")
     }
 
+    /// Author, site and date come along for the header; the page is Markdown, not plain text.
+    func testTheMetadataComesAlong() async throws {
+        let response = "---\ntitle: \"Speech synthesis - Wikipedia\"\nauthor: \"Contributors to Wikimedia projects\"\n"
+            + "site: \"Wikipedia\"\npublished: \"2003-02-01T12:00:00Z\"\ndomain: \"en.wikipedia.org\"\n---\nBody."
+        let page = try await page(response, url: "https://en.wikipedia.org/wiki/Speech_synthesis")
+        XCTAssertEqual(page.title, "Speech synthesis")
+        XCTAssertEqual(page.author, "Contributors to Wikimedia projects")
+        XCTAssertEqual(page.site, "Wikipedia")
+        XCTAssertEqual(page.published, "2003-02-01T12:00:00Z")
+        XCTAssertFalse(page.isPlainText)
+        let bare = try await self.page("---\ntitle: \"x\"\nauthor: \"\"\n---\nBody.")
+        XCTAssertNil(bare.author, "an empty value is none")
+    }
+
     func testTheDomainFallsBackToTheURLsHost() async throws {
         let page = try await page("# Just a body\n\nText.", url: "https://www.example.org/x")
         XCTAssertNil(page.title)
@@ -175,6 +189,10 @@ final class WebExtractorParsingTests: XCTestCase {
         XCTAssertEqual(WebExtractorError.fetchFailed(503).errorDescription, "Failed to fetch content (HTTP 503)")
         XCTAssertEqual(WebExtractorError.fileTooLarge(40_000_000).errorDescription,
                        "The file is too large to read (40 MB; the limit is 32 MB).")
+        XCTAssertEqual(WebExtractorError.quotaExceeded(nil).errorDescription,
+                       "defuddle.md's free quota (1,000 pages a month) is used up; it reads pages again next month.")
+        XCTAssertEqual(WebExtractorError.quotaExceeded("Rate limit").errorDescription,
+                       "defuddle.md's free quota (1,000 pages a month) is used up; it reads pages again next month. (defuddle.md: Rate limit)")
     }
 }
 

@@ -1,8 +1,11 @@
 import AppKit
 
-/// One ReadRead at a time: a second launch activates the first and exits, so two
-/// apps never run two ~2 GB TTS servers.
+/// One ReadRead at a time: a second launch activates the first, asks it to show its panel and
+/// exits, so two apps never run two ~2 GB TTS servers (and relaunching is never a no-op, R4-13).
 enum SingleInstance {
+    /// Posted by a second launch; the running app shows its panel.
+    static let showPanelRequest = Notification.Name("com.readread.app.show-panel")
+
     struct RunningApp: Equatable {
         let pid: pid_t
         let bundleID: String?
@@ -27,6 +30,8 @@ enum SingleInstance {
               let other = apps.first(where: { $0.processIdentifier == pid })
         else { return false }
         other.activate(options: [.activateAllWindows])
+        DistributedNotificationCenter.default().postNotificationName(
+            showPanelRequest, object: nil, userInfo: nil, deliverImmediately: true)
         return true
     }
 }

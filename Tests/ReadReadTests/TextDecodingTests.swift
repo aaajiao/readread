@@ -110,10 +110,11 @@ final class TextDecodingTests: XCTestCase {
     }
 
     func testShiftJISIsNotReadAsGarbageChinese() throws {
-        // Shift_JIS is no candidate, and GB18030 would decode it into rare Han characters.
+        // Shift_JIS is no candidate, and GB18030 would decode it into rare Han characters: it is
+        // recognized by its kana and refused with a message that says why.
         XCTAssertTrue(TextDecoding.mostlyGBKExtension(try Fixtures.data("encodings/shift_jis.txt")))
         XCTAssertThrowsError(try decode("shift_jis.txt")) { error in
-            XCTAssertEqual(error as? TextDecoding.Failure, .notText)
+            XCTAssertEqual(error as? TextDecoding.Failure, .unsupportedLanguage(.japanese))
         }
         for fixture in ["gbk.txt", "gb18030.txt", "big5.txt", "big5_long.txt", "cr_gbk.txt"] {
             XCTAssertFalse(TextDecoding.mostlyGBKExtension(try Fixtures.data("encodings/\(fixture)")), fixture)
@@ -146,5 +147,73 @@ final class TextDecodingTests: XCTestCase {
     func testTheFailureExplainsItself() {
         XCTAssertEqual(TextDecoding.Failure.notText.errorDescription,
                        "This file is not text in an encoding ReadRead knows (UTF-8, UTF-16, GB18030/GBK, Big5 or Windows-1252).")
+        XCTAssertEqual(TextDecoding.Failure.unsupportedLanguage(.korean).errorDescription,
+                       "This file is Korean text (EUC-KR). Korean is not supported: ReadRead reads Chinese and English.")
+        XCTAssertEqual(TextDecoding.Failure.unsupportedLanguage(.japanese).errorDescription,
+                       "This file is Japanese text (Shift_JIS). Japanese is not supported: ReadRead reads Chinese and English.")
+    }
+
+    /// EUC-KR and CP949 Korean, and Shift_JIS Japanese even a few characters long, are refused
+    /// (GB18030 would read them as nonsense Chinese); short GBK, GB18030 and Big5 text still
+    /// decodes (Fixtures/formats, made by make_epubs.py).
+    func testKoreanAndJapaneseAreRefusedAndShortChineseIsNot() throws {
+        func refused(_ name: String) throws -> TextDecoding.Failure? {
+            do {
+                _ = try TextDecoding.decode(try Fixtures.data("formats/\(name)"))
+                return nil
+            } catch {
+                return error as? TextDecoding.Failure
+            }
+        }
+        XCTAssertEqual(try refused("korean_euckr.txt"), .unsupportedLanguage(.korean))
+        XCTAssertEqual(try refused("korean_cp949.txt"), .unsupportedLanguage(.korean))
+        XCTAssertEqual(try refused("japanese_short.txt"), .unsupportedLanguage(.japanese))
+        XCTAssertEqual(try refused("japanese_cp932.txt"), .unsupportedLanguage(.japanese))
+        XCTAssertEqual(try TextDecoding.decode(try Fixtures.data("formats/gbk_short.txt")).text, "你好，世界。\n")
+        XCTAssertEqual(try TextDecoding.decode(try Fixtures.data("formats/gb18030_short.txt")).text, "欢迎使用。\n")
+        XCTAssertEqual(try TextDecoding.decode(try Fixtures.data("formats/big5_short.txt")).text, "電腦說話。\n")
+        // The longer Chinese fixtures are never taken for Korean or Japanese.
+        for fixture in ["gbk.txt", "gb18030.txt", "big5.txt", "big5_long.txt", "cr_gbk.txt", "cp1252.txt", "cp1252_midword.txt"] {
+            XCTAssertNil(TextDecoding.unsupportedLanguage(try Fixtures.data("encodings/\(fixture)")), fixture)
+        }
+        // One unspaced Korean word, or kanji alone, stay ambiguous: read as Chinese, not refused.
+        XCTAssertNil(TextDecoding.unsupportedLanguage(try XCTUnwrap("안녕하세요".data(using: TextDecoding.cp949))))
+        XCTAssertNil(TextDecoding.unsupportedLanguage(try XCTUnwrap("東京都".data(using: TextDecoding.cp932))))
+    }
+
+    /// GB2312's rows for pinyin a to r are EUC-KR's Hangul rows: short Chinese spaced into words
+    /// can read as Korean under CP949, but its words do not end in Korean particles or endings
+    /// (v0.3.0 read these; an early v0.4.0 refused them as Korean). Short Korean that has them is
+    /// still refused.
+    func testShortSpacedChineseIsNotTakenForKorean() throws {
+        XCTAssertEqual(try TextDecoding.decode(try Fixtures.data("formats/gbk_spaced_words.txt")),
+                       .init(text: "快乐 老家 客人 父母\n", encoding: "gb18030"))
+        for text in ["老林 快乐 等你", "快乐 老家 客人 父母 何时 回来", "快乐 老家 博客 父母", "工具 老家 快乐", "而且 快乐 老家 客人",
+                     "编辑 逻辑 编辑", "老师 学生 朋友 家人 快乐 生活"] {
+            let data = try XCTUnwrap(text.data(using: TextDecoding.gb18030))
+            XCTAssertNil(TextDecoding.unsupportedLanguage(data), text)
+            XCTAssertEqual(try TextDecoding.decode(data).text, text)
+        }
+        for text in ["오늘은 날씨가 좋습니다.", "우리는 공원에 가서 산책을 했습니다.", "대한민국의 수도는 서울이다", "저는 학생입니다"] {
+            let data = try XCTUnwrap(text.data(using: TextDecoding.cp949))
+            XCTAssertEqual(TextDecoding.unsupportedLanguage(data), .korean, text)
+        }
+    }
+
+    /// Short Big5 without punctuation is Han characters in GB18030 too, with the same score: the
+    /// reading with fewer rare characters wins (翴 is neither common simplified nor common
+    /// traditional). Traditional characters written in GBK are no rare ones: 或 種利 的 stays GB18030.
+    func testATieBetweenGB18030AndBig5GoesToTheCommonCharacters() throws {
+        XCTAssertEqual(try TextDecoding.decode(try Fixtures.data("formats/big5_no_punctuation.txt")),
+                       .init(text: "點符號\n", encoding: "big5"))
+        XCTAssertEqual(TextDecoding.rareCharacters(in: "翴才腹"), 1)
+        XCTAssertEqual(TextDecoding.rareCharacters(in: "點符號"), 0)
+        let gbkTraditional = try XCTUnwrap("或 種利 的".data(using: TextDecoding.gb18030))
+        XCTAssertNotNil(String(data: gbkTraditional, encoding: TextDecoding.big5), "a tie: Big5 reads these bytes too")
+        XCTAssertEqual(try TextDecoding.decode(gbkTraditional), .init(text: "或 種利 的", encoding: "gb18030"))
+        for text in ["快乐 老家 客人 父母", "你好，世界。", "第一章　风起"] {
+            let data = try XCTUnwrap(text.data(using: TextDecoding.gb18030))
+            XCTAssertEqual(try TextDecoding.decode(data).encoding, "gb18030", text)
+        }
     }
 }
