@@ -1,6 +1,8 @@
 # ReadRead TTS server (HTTP API v2)
 
-A local HTTP server that the ReadRead app starts as a child process. Two Kokoro routes, chosen by voice id:
+A local HTTP server that the ReadRead app starts as a child process. It runs one of two engines: Kokoro (the default,
+bundled with the app, described first) or Qwen3-TTS (`--engine qwen`, the optional high-quality engine; see
+[Qwen3-TTS engine](#qwen3-tts-engine---engine-qwen)). Kokoro has two routes, chosen by voice id:
 
 | voices | model | front end |
 |---|---|---|
@@ -10,8 +12,9 @@ A local HTTP server that the ReadRead app starts as a child process. Two Kokoro 
 Each sentence is one model call; a sentence over the model's 510 phonemes is cut at word boundaries into kokoro's
 batches, one call each, with kokoro's pauses between them. A sentence's trailing pause is trimmed to 40 ms, and
 sentences are joined with 250 ms of silence. A sentence the front end fails on is logged and skipped.
-Code layout: `tts_server.py` (entry point) and `readread_tts/` (`server`, `engine`, `frontend_zh`, `frontend_en`,
-`sentences`, `lexicon` + `lexicon_zh.json`, `zhuyin`, `g2p`, `espeak`, `audio`).
+Code layout: `tts_server.py` (entry point) and `readread_tts/` (`server`, `engine` (the interface both engines
+implement), `engine_kokoro`, `engine_qwen`, `frontend_zh`, `frontend_en`, `sentences`, `lexicon` + `lexicon_zh.json`,
+`zhuyin`, `g2p`, `espeak`, `audio`).
 
 ## Running it
 
@@ -24,7 +27,10 @@ READREAD_TOKEN=$(openssl rand -hex 32) \
   `--preload` loads routes (session, G2P, one warm-up synthesis) before READY. Other routes load on first use.
 - Environment: `READREAD_TOKEN` (required, 64 hex characters), `READREAD_CACHE_DIR` (default
   `~/Library/Caches/ReadRead`), `READREAD_USER_LEXICON` (default `~/Library/Application Support/ReadRead/lexicon_zh.json`).
-- stdout carries exactly one line: `READY {"port":…,"pid":…,"api":2,"loaded":["zh","en"]}`, or
+- `--engine kokoro|qwen` picks the engine (default `kokoro`); `--model 1.7b|0.6b` picks the Qwen model (qwen only,
+  default `1.7b`; with kokoro it is a FATAL bad argument).
+- stdout carries exactly one line: `READY {"port":…,"pid":…,"api":2,"loaded":["zh","en"],"engine":"kokoro"}` (qwen
+  adds `"model":"1.7b"`), or
   `FATAL {"message":"…"}` followed by exit status 3 (bad arguments, no token, missing or wrong model files, missing
   packages, unusable cache directory). Everything else goes to stderr as timestamped log lines, with one line per
   synthesis request (`request_id voice chars sentences frontend_ms synth_ms audio_s status`).
@@ -53,8 +59,10 @@ Every request needs `Authorization: Bearer <READREAD_TOKEN>` (401) and `Host: 12
 | `unsupported_media_type` | 415 |
 | `internal` | 500 |
 
-- `GET /health` returns `{"status":"ok","api":2,"pid":…,"loaded":[…],"versions":{"kokoro_onnx":…,"misaki":…,"onnxruntime":…,"python":…}}`.
-- `GET /voices` returns `{"zh":[all zf_/zm_ ids],"en":[all af_/am_/bf_/bm_ ids]}`, sorted, without loading a model.
+- `GET /health` returns `{"status":"ok","api":2,"pid":…,"loaded":[…],"versions":{"kokoro_onnx":…,"misaki":…,"onnxruntime":…,"python":…},"engine":"kokoro"}`;
+  for qwen, `versions` names `mlx`, `mlx_audio`, `transformers`, `misaki` and `python`, and `"model"` follows `"engine"`.
+- `GET /voices` returns `{"zh":[all zf_/zm_ ids],"en":[all af_/am_/bf_/bm_ ids]}`, sorted, without loading a model
+  (qwen: `{"zh":["serena"],"en":["aiden"]}`).
 - `POST /synthesize` needs `Content-Type: application/json` (415) and a body of at most 1 MiB (413):
   - `text`: required, at most 4000 characters (413).
   - `voice`: required.
@@ -63,9 +71,12 @@ Every request needs `Authorization: Bearer <READREAD_TOKEN>` (401) and `Host: 12
   - `request_id`: optional, at most 128 characters. It is echoed back.
   - `format`: `json` (default) or `wav`.
 
-  - `json` returns `{"request_id","sample_rate":24000,"duration","audio":<base64 PCM16 mono WAV>,"silent","voice","lang","speed","sentences":[{"text","start","end"}],"tokens":[{"text","start","end"}],"timing_ms":{"frontend","synth"}}`.
-    Sentence `text` is the normalized sentence. Tokens are the G2P words with their spoken time span. All times are in seconds within the returned audio.
-  - `wav` returns the WAV itself, with `X-ReadRead-Duration`.
+  - `json` returns `{"request_id","sample_rate":24000,"duration","audio":<base64 PCM16 mono WAV>,"silent","voice","lang","speed","synth_speed","sentences":[{"text","start","end"}],"tokens":[{"text","start","end"}],"timing_ms":{"frontend","synth"}}`.
+    Sentence `text` is the normalized sentence. Tokens are the G2P words with their spoken time span (qwen: always
+    `[]`). All times are in seconds within the returned audio.
+  - `synth_speed` is the speed the audio was synthesized at: the requested `speed` for kokoro, always 1.0 for qwen,
+    whose model has no speed control. The client plays the audio at `speed / synth_speed`.
+  - `wav` returns the WAV itself, with `X-ReadRead-Duration` and `X-ReadRead-Synth-Speed`.
   - Text with nothing to say (empty, `---`, `• • •`, emoji only) returns 150 ms of silence, `"silent": true`.
 
 One synthesis runs at a time. A request whose client disconnects, either while waiting for its turn or between
@@ -77,6 +88,76 @@ list numbers like `1.`); a line without Han characters is split the English way.
 `. ! ?`, except after decimals, versions, domains, abbreviations (`Dr.`, `U.S.`, `e.g.`), initials and ellipses
 (`St.` ends a sentence only before a word that starts one: "Main St. Then"). Footnote markers, table rules, bullets,
 emoji and arrows are dropped before splitting.
+
+## Qwen3-TTS engine (`--engine qwen`)
+
+Qwen3-TTS-12Hz CustomVoice, 8-bit, on the GPU through MLX (mlx 0.32.4, mlx-audio 0.6.0). It is optional and not in
+the app bundle: `scripts/install-hq.sh` puts a CPython, a venv and the model files into `$READREAD_HQ_HOME` (default
+`~/Library/Application Support/ReadRead/hq`), and the server runs from that venv:
+
+```sh
+HQ=~/Library/Application\ Support/ReadRead/hq
+READREAD_TOKEN=$(openssl rand -hex 32) "$HQ/venv/bin/python3" -I -B tts_server/tts_server.py \
+  --engine qwen --model 1.7b --models-dir "$HQ/models" --preload zh,en
+```
+
+- Models: `1.7b` (default) and `0.6b` (about 1 GB less memory and a little faster). `--models-dir` holds their folders,
+  `Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit/` and `Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit/`; the server checks the size of
+  every file it reads, install-hq.sh also their sha256.
+- Voices: `serena` reads Chinese (and the English words in it), `aiden` reads English. Any other id is `unknown_voice`;
+  a `lang` that disagrees with the voice is `voice_language_mismatch`.
+- Per sentence (split as for Kokoro): `frontend_zh.normalize` or `frontend_en.normalize`, a terminal stop for a line
+  without one, then one generation. The seed is a hash of voice and text, so the same sentence comes back as the
+  same audio. Generation always streams (non-streaming decoding lets MLX's buffer cache grow to 9-15 GB) and is
+  capped at 12.5 x (0.5 x characters + 3) tokens; a generation longer than 2.5 x a rough expected length + 1 s (cut
+  off as soon as it gets there), or shorter than 0.3 x that length, is retried with another seed, up to 3 attempts.
+  Silence around each sentence is trimmed (30 ms kept before, 40 ms after); sentences are joined with 250 ms.
+- One MLX thread does all model work (MLX keeps per-thread state). Cancellation is checked between streamed chunks
+  (every 0.32 s of audio) and between sentences; SIGTERM, SIGINT and stdin EOF exit as for Kokoro, mid-synthesis too.
+- `--preload` loads the model once and runs one warm-up sentence per route before READY.
+- Offline: the engine sets `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1` and `HF_HUB_DISABLE_TELEMETRY=1` when it is
+  imported, before any Hugging Face import, and points `HF_HOME` into the cache directory. Importing `engine_qwen`
+  imports no MLX, so the Kokoro runtime (which has none) can import the package; a missing package is a FATAL that
+  names `./scripts/install-hq.sh`. mlx-audio prints on stdout; that goes to stderr like every other stray print.
+- Measured on an M4 Max (load average 4-5, page cache warm), 1.7b / 0.6b: start -> READY with `--preload zh,en`
+  1.7 / 1.9 s; RTF 0.22 / 0.21 for both languages; a typical sentence in 0.6-0.8 s; after 20 sentences RSS 3.1 /
+  2.1 GB, physical footprint 3.3 / 2.3 GB, peak footprint 4.2 / 3.1 GB.
+
+### install-hq.sh
+
+```sh
+./scripts/install-hq.sh [--model 1.7b|0.6b|both] [--json-progress]   # install or update (default 1.7b)
+./scripts/install-hq.sh --check [--model …] [--json-progress]        # verify; exit status 0 or 1
+./scripts/install-hq.sh --uninstall [--json-progress]                # remove $READREAD_HQ_HOME
+```
+
+- Layout: `python/` (the standalone CPython pinned in `scripts/lib/versions.sh`), `venv/` (`requirements-hq.lock`,
+  `pip --require-hashes`), `models/<folder>/` (every file at the Hugging Face revision pinned in versions.sh, size and
+  sha256 checked; a file both models share, such as `speech_tokenizer/model.safetensors`, is stored once and
+  hardlinked), `install.json` (`{"version":1,"python","lock_sha256","models":{"1.7b":{"repo","revision","dir","files",
+  "bytes"}},"installed_at"}`, written last).
+- Idempotent: python/ and venv/ are rebuilt only when their inputs change or one of their files no longer matches
+  its sha256 (python/ against the manifest `.readread-manifest` written when it was extracted, venv/ against the
+  RECORD pip wrote for each distribution), every model file is verified on every run, a corrupt one is downloaded
+  again, and an interrupted download resumes from its `.part`. A run ends with an import check and, per model, one
+  Chinese sentence through the real server (READY, `/synthesize`, stdin EOF); install.json lists a model only after
+  that passed.
+- `--check` makes the same checks without changing anything (python/, venv/ with `pip check` and the lock's
+  distribution set, every model file's size and sha256, the imports) and exits 0 or 1.
+- One run at a time per `$READREAD_HQ_HOME`: the lock is `.lock`, a symlink to the run's pid (a lock whose process
+  is gone is taken over with a warning); `--uninstall` takes it too, `--check` refuses while an install holds it.
+  SIGINT, SIGTERM and SIGHUP stop a run at once, pip and downloads included, with an error event; run it again to
+  resume.
+- `--json-progress`: one JSON object per line on stdout (`{"event":"step","name","index","count"}`,
+  `{"event":"download","file","done","total"}`, then `{"event":"done",…}` or `{"event":"error","message"}`); the
+  human-readable text goes to stderr.
+- `--uninstall` removes `$READREAD_HQ_HOME` only if it holds nothing but what the script creates, and never a path
+  that is relative, shallower than two levels, a symlink, or the home directory or one of its parents (compared by
+  identity, so another spelling of the same folder on a case-insensitive volume counts). An install, too, refuses a
+  folder that holds anything else, before it writes there: it only ever replaces its own python/, venv/ and `.tmp`.
+- Environment: `READREAD_HQ_HOME`, `READREAD_BUILD_CACHE` (the Python tarball and pip cache, default `build/cache`),
+  `READREAD_TTS_SERVER_DIR` (the server the smoke run starts, default `tts_server/`). The models are about 3.1 GB
+  (1.7b) and 2.0 GB (0.6b, 1.3 GB more when 1.7b is there), python/ and venv/ about 0.7 GB.
 
 ## Override lexicon (Chinese readings)
 
@@ -103,8 +184,16 @@ is the docstring of `readread_tts/lexicon.py`.
 ```sh
 ~/.readread/env/bin/python3 -B -m pytest -q -p no:cacheprovider tts_server/tests            # fast tests only
 READREAD_MODELS_DIR=~/.readread/models ~/.readread/env/bin/python3 -B -m pytest -q -p no:cacheprovider tts_server/tests
+READREAD_HQ_HOME=~/Library/Application\ Support/ReadRead/hq ~/.readread/env/bin/python3 -B -m pytest -q \
+  -p no:cacheprovider tts_server/tests/test_qwen_models.py                                  # Qwen, real models
 ```
 
 The HTTP tests start real server processes on 127.0.0.1. The tests that need the model files are skipped unless
 `READREAD_MODELS_DIR` is set. `tests/fixtures/frontend_probes.json` holds the 59 front-end probes from the engine
 selection lab, and the run ends with their tally per kind.
+
+The Qwen engine's fast tests need no MLX: `test_engine_qwen.py` drives the engine with a fake model
+(`tests/fakes/fake_qwen.py`), and `test_server_qwen.py` runs the real server with `tests/fakes` first on `sys.path`,
+where stand-ins for MLX, mlx-audio and the Hugging Face packages live. `test_qwen_models.py` starts the server from
+the HQ venv for each model `install.json` lists; it is skipped unless `READREAD_HQ_HOME` is set and needs the GPU
+(Metal is not available inside a sandbox).

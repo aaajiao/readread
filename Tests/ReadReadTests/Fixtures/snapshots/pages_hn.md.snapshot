@@ -1,0 +1,28 @@
+title: Show HN: A menu bar app that reads articles aloud (example.com)
+source: news.ycombinator.com
+language: en
+blocks: 8, units: 8
+
+# 0 title
+  0 en title | Show HN: A menu bar app that reads articles aloud (example.com).
+
+# 1 heading
+  1 en heading | Comments.
+
+# 2 quote
+  2 en | night_owl, 2026-10-01
+
+# 3 quote
+  3 en | "the easiest way through a long read" -a colleague on the morning train
+
+# 4 quote
+  4 en | reader_dev, 2026-10-01
+
+# 5 quote
+  5 en | Is there anything you would like it to read next?
+
+# 6 quote
+  6 en | quiet_fox, 2026-10-02
+
+# 7 quote
+  7 en | sure

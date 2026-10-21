@@ -12,8 +12,8 @@ protocol PreferencesStore: AnyObject {
 
 extension UserDefaults: PreferencesStore {}
 
-/// Per-language voice and speed (`voice_zh`, `voice_en`, `speed_zh`, `speed_en`),
-/// plus the last detected language (to prewarm the right model).
+/// A voice per language (`voice_zh`, `voice_en`), a speed per document language
+/// (`speed_zh`, `speed_en`), plus the last document language (to prewarm the right model).
 @MainActor
 struct VoicePreferences {
     /// Languages v0.1.x had and this version dropped.
@@ -69,8 +69,12 @@ struct VoicePreferences {
 
     /// The voice is stored under its own language, so it can never land under
     /// the wrong key.
-    func save(voice: Voice, speed: Double, language: SpeechLanguage) {
+    func saveVoice(_ voice: Voice) {
         defaults.set(voice.id, forKey: Self.voiceKey(voice.language))
+    }
+
+    /// The speed for documents in `language`.
+    func saveSpeed(_ speed: Double, for language: SpeechLanguage) {
         defaults.set(SynthesisRequest.normalizedSpeed(speed), forKey: Self.speedKey(language))
     }
 

@@ -2,357 +2,187 @@ import XCTest
 
 @testable import ReadRead
 
+/// What WebExtractor makes of a defuddle.md response and of local files (the Markdown itself
+/// is MarkdownCleaner's, see MarkdownCleanerTests).
 final class WebExtractorParsingTests: XCTestCase {
-
-    // MARK: - stripMarkdown: images
-
-    func testStripMarkdownRemovesImages() {
-        let input = "Before ![alt text](https://example.com/img.png) after"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Before  after")
+    private func page(_ response: String, url: String = "https://www.example.com/post") async throws -> WebPage {
+        let data = Data(response.utf8)
+        return try await WebExtractor.extractFromURL(try XCTUnwrap(URL(string: url)), fetch: { _ in data })
     }
 
-    // MARK: - stripMarkdown: links
+    // MARK: - extractFromURL
 
-    func testStripMarkdownConvertsLinksToText() {
-        let input = "Click [here](https://example.com) for more"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Click here for more")
+    func testTheFrontmatterIsSplitOffAndGivesTitleAndDomain() async throws {
+        let response = try Fixtures.text("pages/zh_wikipedia.md")
+        let page = try await page(response, url: "https://zh.wikipedia.org/wiki/语音合成")
+        XCTAssertEqual(page.title, "语音合成", "the Wikipedia suffix goes")
+        XCTAssertEqual(page.domain, "zh.wikipedia.org")
+        XCTAssertTrue(page.markdown.hasPrefix("\n**語音合成**"), String(page.markdown.prefix(40)))
+        XCTAssertFalse(page.markdown.contains("word_count"))
     }
 
-    // MARK: - stripMarkdown: fenced code blocks
-
-    func testStripMarkdownRemovesFencedCodeBlocks() {
-        let input = "Intro\n```swift\nlet x = 1\n```\nOutro"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Intro\n\nOutro")
+    func testTheRequestGoesToDefuddleWithoutTheScheme() async throws {
+        let seen = URLBox()
+        _ = try await WebExtractor.extractFromURL(try XCTUnwrap(URL(string: "https://zh.wikipedia.org/wiki/语音合成?x=1"))) { url in
+            seen.set(url)
+            return Data("---\ntitle: \"x\"\n---\nbody".utf8)
+        }
+        XCTAssertEqual(seen.value?.absoluteString, "https://defuddle.md/zh.wikipedia.org/wiki/%E8%AF%AD%E9%9F%B3%E5%90%88%E6%88%90?x=1")
+        XCTAssertEqual(WebExtractor.defuddleURL(for: try XCTUnwrap(URL(string: "http://example.com/a")))?.absoluteString,
+                       "https://defuddle.md/example.com/a")
     }
 
-    // MARK: - stripMarkdown: inline code
-
-    func testStripMarkdownUnwrapsInlineCode() {
-        let input = "Use `print()` to output"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Use print() to output")
+    func testTheDomainFallsBackToTheURLsHost() async throws {
+        let page = try await page("# Just a body\n\nText.", url: "https://www.example.org/x")
+        XCTAssertNil(page.title)
+        XCTAssertEqual(page.domain, "example.org")
+        XCTAssertEqual(page.markdown, "# Just a body\n\nText.")
     }
 
-    // MARK: - stripMarkdown: ATX headings
-
-    func testStripMarkdownStripsH1Marker() {
-        let input = "# Heading One"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Heading One")
-    }
-
-    func testStripMarkdownStripsH2Marker() {
-        let input = "## Heading Two"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Heading Two")
-    }
-
-    func testStripMarkdownStripsH6Marker() {
-        let input = "###### Heading Six"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Heading Six")
-    }
-
-    // MARK: - stripMarkdown: bold/italic with asterisks
-
-    func testStripMarkdownUnwrapsItalicAsterisks() {
-        let input = "This is *italic* text"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "This is italic text")
-    }
-
-    func testStripMarkdownUnwrapsBoldAsterisks() {
-        let input = "This is **bold** text"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "This is bold text")
-    }
-
-    func testStripMarkdownUnwrapsBoldItalicAsterisks() {
-        let input = "This is ***bold italic*** text"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "This is bold italic text")
-    }
-
-    // MARK: - stripMarkdown: bold/italic with underscores
-
-    func testStripMarkdownUnwrapsItalicUnderscores() {
-        let input = "This is _italic_ text"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "This is italic text")
-    }
-
-    func testStripMarkdownUnwrapsBoldUnderscores() {
-        let input = "This is __bold__ text"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "This is bold text")
-    }
-
-    func testStripMarkdownUnwrapsBoldItalicUnderscores() {
-        let input = "This is ___bold italic___ text"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "This is bold italic text")
-    }
-
-    // MARK: - stripMarkdown: blockquotes
-
-    func testStripMarkdownStripsBlockquoteMarker() {
-        let input = "> This is a quote"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "This is a quote")
-    }
-
-    func testStripMarkdownStripsMultilineBlockquote() {
-        let input = "> Line one\n> Line two"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Line one\nLine two")
-    }
-
-    // MARK: - stripMarkdown: horizontal rules
-
-    func testStripMarkdownRemovesDashHorizontalRule() {
-        let input = "Above\n---\nBelow"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Above\n\nBelow")
-    }
-
-    func testStripMarkdownRemovesAsteriskHorizontalRule() {
-        let input = "Above\n***\nBelow"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Above\n\nBelow")
-    }
-
-    func testStripMarkdownRemovesUnderscoreHorizontalRule() {
-        let input = "Above\n___\nBelow"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Above\n\nBelow")
-    }
-
-    // Inline emphasis must still survive the (now earlier) horizontal-rule pass —
-    // the rule regex is whole-line anchored, so `**bold**` is untouched by it.
-    func testStripMarkdownKeepsInlineBoldAfterRuleReorder() {
-        let input = "This is **bold** and *italic* text."
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "This is bold and italic text.")
-    }
-
-    // MARK: - stripMarkdown: unordered list markers
-
-    func testStripMarkdownStripsDashListMarker() {
-        let input = "- item one\n- item two"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "item one\nitem two")
-    }
-
-    func testStripMarkdownStripsAsteriskListMarker() {
-        let input = "* item one\n* item two"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "item one\nitem two")
-    }
-
-    func testStripMarkdownStripsPlusListMarker() {
-        let input = "+ item one\n+ item two"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "item one\nitem two")
-    }
-
-    // MARK: - stripMarkdown: ordered list markers
-
-    func testStripMarkdownStripsOrderedListMarker() {
-        let input = "1. First\n2. Second"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "First\nSecond")
-    }
-
-    // MARK: - stripMarkdown: HTML tags
-
-    func testStripMarkdownRemovesHTMLTags() {
-        let input = "Hello <b>world</b> and <br/> more"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Hello world and  more")
-    }
-
-    // MARK: - stripMarkdown: newline collapsing
-
-    func testStripMarkdownCollapsesExcessiveNewlines() {
-        let input = "First\n\n\n\nSecond"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "First\n\nSecond")
-    }
-
-    func testStripMarkdownCollapsesFiveNewlinesToTwo() {
-        let input = "A\n\n\n\n\nB"
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "A\n\nB")
-    }
-
-    // MARK: - stripMarkdown: leading/trailing whitespace
-
-    func testStripMarkdownTrimsLeadingAndTrailingWhitespace() {
-        let input = "   \n  Hello world  \n   "
-        let result = WebExtractor.stripMarkdown(input)
-        XCTAssertEqual(result, "Hello world")
-    }
-
-    // MARK: - parseFrontmatter: valid frontmatter
-
-    func testParseFrontmatterExtractsKeyValuePairs() {
-        let content = "---\ntitle: My Article\nauthor: Jane\n---\nBody text here"
-        let (metadata, body) = WebExtractor.parseFrontmatter(content)
-        XCTAssertEqual(metadata["title"], "My Article")
-        XCTAssertEqual(metadata["author"], "Jane")
-        XCTAssertEqual(body, "Body text here")
-    }
-
-    func testParseFrontmatterUnquotesDoubleQuotedValues() {
-        let content = "---\ntitle: \"Quoted Title\"\n---\nBody"
-        let (metadata, body) = WebExtractor.parseFrontmatter(content)
-        XCTAssertEqual(metadata["title"], "Quoted Title")
-        XCTAssertEqual(body, "Body")
-    }
-
-    func testParseFrontmatterReturnsRemainingBodyAfterClosingDelimiter() {
-        let content = "---\nkey: value\n---\nFirst paragraph\n\nSecond paragraph"
-        let (_, body) = WebExtractor.parseFrontmatter(content)
-        XCTAssertEqual(body, "First paragraph\n\nSecond paragraph")
-    }
-
-    func testParseFrontmatterHandlesColonInValue() {
-        let content = "---\nurl: https://example.com\n---\nBody"
-        let (metadata, _) = WebExtractor.parseFrontmatter(content)
-        XCTAssertEqual(metadata["url"], "https://example.com")
-    }
-
-    // MARK: - parseFrontmatter: no frontmatter
-
-    func testParseFrontmatterWithoutLeadingDelimiterReturnsEmptyMetadata() {
-        let content = "Just some plain text without frontmatter"
-        let (metadata, body) = WebExtractor.parseFrontmatter(content)
-        XCTAssertTrue(metadata.isEmpty)
-        XCTAssertEqual(body, content)
-    }
-
-    func testParseFrontmatterWithoutLeadingDelimiterPreservesFullContent() {
-        let content = "# Heading\n\nSome content here"
-        let (metadata, body) = WebExtractor.parseFrontmatter(content)
-        XCTAssertTrue(metadata.isEmpty)
-        XCTAssertEqual(body, content)
-    }
-
-    // MARK: - parseFrontmatter: malformed frontmatter
-
-    func testParseFrontmatterMalformedNoClosingDelimiterReturnsEmptyMetadataAndFullContent() {
-        let content = "---\ntitle: No closing\nauthor: Jane\n"
-        let (metadata, body) = WebExtractor.parseFrontmatter(content)
-        XCTAssertTrue(metadata.isEmpty)
-        XCTAssertEqual(body, content)
-    }
-
-    func testParseFrontmatterOpeningDelimiterButNoClosingDelimiterReturnsFullContent() {
-        let content = "---\nkey: value\nmore text without closing delimiter"
-        let (metadata, body) = WebExtractor.parseFrontmatter(content)
-        XCTAssertTrue(metadata.isEmpty)
-        XCTAssertEqual(body, content)
-    }
-
-    // MARK: - readFile: markdown with frontmatter
-
-    func testReadFileMDWithFrontmatterReturnsTitleAsFilename() async throws {
-        let tmpDir = FileManager.default.temporaryDirectory
-        let fileURL = tmpDir.appendingPathComponent("myarticle.md")
-        let content = "---\ntitle: Ignored Title\n---\n# Hello\n\nThis is the body."
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: fileURL) }
-
-        let result = try await WebExtractor.readFile(fileURL)
-        XCTAssertEqual(result.title, "myarticle")
-        XCTAssertFalse(result.text.contains("#"), "heading markers should be stripped")
-        XCTAssertTrue(result.text.contains("Hello"))
-        XCTAssertTrue(result.text.contains("This is the body."))
-    }
-
-    func testReadFileMDStripsMarkdownSyntax() async throws {
-        let tmpDir = FileManager.default.temporaryDirectory
-        let fileURL = tmpDir.appendingPathComponent("formatted.md")
-        let content = "**Bold text** and *italic text* and `code`"
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: fileURL) }
-
-        let result = try await WebExtractor.readFile(fileURL)
-        XCTAssertEqual(result.text, "Bold text and italic text and code")
-    }
-
-    // MARK: - readFile: txt file
-
-    func testReadFileTxtReturnsContentTrimmed() async throws {
-        let tmpDir = FileManager.default.temporaryDirectory
-        let fileURL = tmpDir.appendingPathComponent("notes.txt")
-        let content = "  Plain text content with **no** stripping.  \n"
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: fileURL) }
-
-        let result = try await WebExtractor.readFile(fileURL)
-        // txt files are not markdown-stripped, just trimmed
-        XCTAssertEqual(result.text, "Plain text content with **no** stripping.")
-        XCTAssertEqual(result.title, "notes")
-    }
-
-    // MARK: - readFile: .markdown extension
-
-    func testReadFileMarkdownExtensionTreatedLikeMD() async throws {
-        let tmpDir = FileManager.default.temporaryDirectory
-        let fileURL = tmpDir.appendingPathComponent("doc.markdown")
-        let content = "## Section\n\nContent here."
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: fileURL) }
-
-        let result = try await WebExtractor.readFile(fileURL)
-        XCTAssertFalse(result.text.contains("##"), ".markdown extension should strip heading markers")
-        XCTAssertTrue(result.text.contains("Section"))
-        XCTAssertTrue(result.text.contains("Content here."))
-    }
-
-    // MARK: - readFile: non-existent file
-
-    func testReadFileNonExistentFileThrowsFileReadFailed() async throws {
-        let tmpDir = FileManager.default.temporaryDirectory
-        let fileURL = tmpDir.appendingPathComponent("does_not_exist_xyz123.md")
-
+    func testDefuddleErrorJSONIsTheServicesMessage() async {
         do {
-            _ = try await WebExtractor.readFile(fileURL)
-            XCTFail("expected WebExtractorError.fileReadFailed to be thrown")
-        } catch let error as WebExtractorError {
-            guard case .fileReadFailed = error else {
-                return XCTFail("expected .fileReadFailed, got \(error)")
-            }
+            _ = try await page(#"{"error":"Timed out fetching page after 10s"}"#)
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? WebExtractorError, .service("Timed out fetching page after 10s"))
+            XCTAssertEqual((error as? LocalizedError)?.errorDescription,
+                           "defuddle.md could not extract the page: Timed out fetching page after 10s")
         }
     }
 
-    // MARK: - WebExtractorError.errorDescription
-
-    func testErrorDescriptionInvalidURL() {
-        let error = WebExtractorError.invalidURL
-        XCTAssertNotNil(error.errorDescription)
-        XCTAssertEqual(error.errorDescription, "Invalid URL")
+    func testAPageWithOnlyFrontmatterHasAnEmptyBody() async throws {
+        // neverssl.com as defuddle.md returned it.
+        let response = "---\ntitle: \"NeverSSL - Connecting ...\"\nsite: \"neverssl.com\"\nsource: \"https://neverssl.com/\"\ndomain: \"neverssl.com\"\n---\n\n"
+        let page = try await page(response, url: "https://neverssl.com/")
+        XCTAssertEqual(page.title, "NeverSSL - Connecting ...")
+        XCTAssertEqual(page.markdown.trimmingCharacters(in: .whitespacesAndNewlines), "")
     }
 
-    func testErrorDescriptionFetchFailedContainsStatusCode() {
-        let error = WebExtractorError.fetchFailed(503)
-        XCTAssertNotNil(error.errorDescription)
-        XCTAssertTrue(error.errorDescription?.contains("503") ?? false)
+    func testTheResponseIsUTF8EvenWithAControlCharacterInIt() async throws {
+        // A stray U+000B once made the legacy heuristics read the whole page as GB18030 mojibake.
+        let body = "---\ntitle: \"Café culture in Zürich\"\ndomain: \"example.com\"\n---\n\n"
+            + "The café served crème brûlée to naïve résumé writers.\u{0B}Señor Müller agreed.\u{07}"
+        let page = try await page(body)
+        XCTAssertEqual(page.title, "Café culture in Zürich")
+        XCTAssertEqual(page.markdown, "\nThe café served crème brûlée to naïve résumé writers.\nSeñor Müller agreed.")
+        let document = DocumentBuilder.fromMarkdown(page.markdown, title: page.title, source: .text, sourceLabel: page.domain)
+        XCTAssertEqual(document.detectedLanguage, .en)
+        // Bytes that are not UTF-8 become U+FFFD; nothing is guessed.
+        let broken = try await WebExtractor.extractFromURL(try XCTUnwrap(URL(string: "https://example.cn/")),
+                                                           fetch: { _ in Data([0x41, 0xB5, 0xDA, 0x42]) })
+        XCTAssertEqual(broken.markdown, "A\u{FFFD}\u{FFFD}B")
     }
 
-    func testErrorDescriptionNoContent() {
-        let error = WebExtractorError.noContent
-        XCTAssertNotNil(error.errorDescription)
-        XCTAssertEqual(error.errorDescription, "No readable content found")
+    func testCRLFResponsesKeepTheirFrontmatter() async throws {
+        let page = try await page("---\r\ntitle: \"A\"\r\ndomain: \"a.com\"\r\n---\r\nBody\r\n")
+        XCTAssertEqual(page.title, "A")
+        XCTAssertEqual(page.domain, "a.com")
+        XCTAssertEqual(page.markdown, "Body\n")
     }
 
-    func testErrorDescriptionFileReadFailed() {
-        let error = WebExtractorError.fileReadFailed
-        XCTAssertNotNil(error.errorDescription)
-        XCTAssertEqual(error.errorDescription, "Failed to read file")
+    // MARK: - Titles
+
+    func testSiteSuffixesAreStrippedOnlyWhenTheyNameTheSite() {
+        XCTAssertEqual(WebExtractor.stripSiteSuffix("Speech synthesis - Wikipedia", site: "Wikipedia"), "Speech synthesis")
+        XCTAssertEqual(WebExtractor.stripSiteSuffix("语音合成 - 维基百科，自由的百科全书", site: "Wikipedia"), "语音合成")
+        XCTAssertEqual(WebExtractor.stripSiteSuffix("rsync 用法教程 - 阮一峰的网络日志", site: "ruanyifeng.com"),
+                       "rsync 用法教程 - 阮一峰的网络日志", "the suffix does not name the site")
+        XCTAssertEqual(WebExtractor.stripSiteSuffix("Release notes | The Swift Blog", site: "The Swift Blog"), "Release notes")
+        XCTAssertEqual(WebExtractor.stripSiteSuffix("Pros - and cons", site: ""), "Pros - and cons")
+        XCTAssertEqual(WebExtractor.stripSiteSuffix("  Title  ", site: "x"), "Title")
     }
+
+    func testDisplayDomainDropsWWW() {
+        XCTAssertEqual(WebExtractor.displayDomain("www.example.com"), "example.com")
+        XCTAssertEqual(WebExtractor.displayDomain("WWW.Example.com"), "Example.com")
+        XCTAssertEqual(WebExtractor.displayDomain("zh.wikipedia.org"), "zh.wikipedia.org")
+    }
+
+    func testServiceErrorOnlyMatchesAnErrorObject() {
+        XCTAssertEqual(WebExtractor.serviceError(#"  {"error": {"message": "quota"}}  "#), "quota")
+        XCTAssertNil(WebExtractor.serviceError(#"{"title": "not an error"}"#))
+        XCTAssertNil(WebExtractor.serviceError("# {error} in a heading"))
+    }
+
+    // MARK: - readFile
+
+    func testMarkdownFileTakesItsTitleFromTheFrontmatter() async throws {
+        let url = try makeTemporaryDirectory().appending(path: "myarticle.md")
+        try "---\ntitle: \"The Real Title\"\n---\n# Hello\n\nThis is the body.".write(to: url, atomically: true, encoding: .utf8)
+        let file = try await WebExtractor.readFile(url)
+        XCTAssertEqual(file.title, "The Real Title")
+        XCTAssertTrue(file.titleFromMetadata)
+        XCTAssertEqual(file.fileName, "myarticle.md")
+        XCTAssertEqual(file.body, "# Hello\n\nThis is the body.")
+        XCTAssertTrue(file.isMarkdown)
+    }
+
+    func testWithoutFrontmatterTheTitleIsTheFileName() async throws {
+        let url = try makeTemporaryDirectory().appending(path: "doc.markdown")
+        try "## Section\n\nContent here.".write(to: url, atomically: true, encoding: .utf8)
+        let file = try await WebExtractor.readFile(url)
+        XCTAssertEqual(file.title, "doc")
+        XCTAssertFalse(file.titleFromMetadata)
+        XCTAssertTrue(file.isMarkdown, ".markdown is Markdown too")
+        XCTAssertEqual(file.body, "## Section\n\nContent here.")
+    }
+
+    func testTextFilesAreNotMarkdown() async throws {
+        let url = try makeTemporaryDirectory().appending(path: "notes.txt")
+        try "---\ntitle: x\n---\n**not** markup".write(to: url, atomically: true, encoding: .utf8)
+        let file = try await WebExtractor.readFile(url)
+        XCTAssertFalse(file.isMarkdown)
+        XCTAssertEqual(file.title, "notes")
+        XCTAssertEqual(file.body, "---\ntitle: x\n---\n**not** markup", "no frontmatter in a .txt file")
+    }
+
+    func testFilesInLegacyEncodingsAreDecoded() async throws {
+        let directory = try makeTemporaryDirectory()
+        let url = directory.appending(path: "novel.txt")
+        try Fixtures.data("encodings/gbk.txt").write(to: url)
+        let file = try await WebExtractor.readFile(url)
+        XCTAssertTrue(file.body.hasPrefix("第一章　风起\n　　天色渐暗"))
+        let crlf = directory.appending(path: "crlf.md")
+        try Data("---\r\ntitle: CRLF\r\n---\r\nLine one.\r\n".utf8).write(to: crlf)
+        let markdown = try await WebExtractor.readFile(crlf)
+        XCTAssertEqual(markdown.title, "CRLF")
+        XCTAssertEqual(markdown.body, "Line one.\n")
+    }
+
+    func testBinaryFilesAreRefused() async throws {
+        let url = try makeTemporaryDirectory().appending(path: "image.txt")
+        try Data((0..<2_048).map { UInt8(truncatingIfNeeded: $0 &* 37 &+ 11) }).write(to: url)
+        do {
+            _ = try await WebExtractor.readFile(url)
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? TextDecoding.Failure, .notText)
+        }
+    }
+
+    func testAMissingFileIsAReadFailure() async {
+        let url = FileManager.default.temporaryDirectory.appending(path: "does_not_exist_\(UUID().uuidString).md")
+        do {
+            _ = try await WebExtractor.readFile(url)
+            XCTFail("expected an error")
+        } catch {
+            guard case .fileReadFailed? = error as? WebExtractorError else { return XCTFail("\(error)") }
+        }
+    }
+
+    func testErrorDescriptions() {
+        XCTAssertEqual(WebExtractorError.invalidURL.errorDescription, "Invalid URL")
+        XCTAssertEqual(WebExtractorError.fetchFailed(503).errorDescription, "Failed to fetch content (HTTP 503)")
+        XCTAssertEqual(WebExtractorError.fileTooLarge(40_000_000).errorDescription,
+                       "The file is too large to read (40 MB; the limit is 32 MB).")
+    }
+}
+
+/// A URL set from a @Sendable closure.
+private final class URLBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var url: URL?
+
+    var value: URL? { lock.withLock { url } }
+    func set(_ url: URL) { lock.withLock { self.url = url } }
 }

@@ -161,7 +161,7 @@ def server(tmp_path_factory):
 
 
 def test_ready_line(server):
-    assert re.fullmatch(r'READY \{"port":\d+,"pid":\d+,"api":2,"loaded":\[\]\}', server.line)
+    assert re.fullmatch(r'READY \{"port":\d+,"pid":\d+,"api":2,"loaded":\[\],"engine":"kokoro"\}', server.line)
     assert json.loads(server.line[6:])["pid"] == server.proc.pid
 
 
@@ -174,6 +174,7 @@ def test_health(server):
         {"status": "ok", "api": 2, "pid": server.proc.pid, "loaded": []}
     assert set(data["versions"]) == {"kokoro_onnx", "misaki", "onnxruntime", "python"}
     assert "unknown" not in data["versions"].values()
+    assert data["engine"] == "kokoro" and "model" not in data
 
 
 @pytest.mark.parametrize("value", [None, "", "Bearer", "Bearer wrong", "bearer {token}", "Bearer {token}0",
@@ -506,6 +507,15 @@ def test_speed(model_server):
     slow = synthesize(model_server, text=text, voice="zf_001", speed=0.5)["duration"]
     fast = synthesize(model_server, text=text, voice="zf_001", speed=2.0)["duration"]
     assert fast < slow * 0.5
+
+
+def test_synth_speed_is_the_requested_speed(model_server):
+    # Kokoro synthesizes at the requested speed, so the client plays the audio at 1.0.
+    assert synthesize(model_server, text="你好。", voice="zf_001", speed=1.25)["synth_speed"] == 1.25
+    assert synthesize(model_server, text="你好。", voice="zf_001")["synth_speed"] == 1.0
+    status, headers, _ = model_server.request("POST", "/synthesize", {"text": "Hello.", "voice": "af_heart",
+                                                                      "speed": 0.75, "format": "wav"})
+    assert status == 200 and headers["x-readread-synth-speed"] == "0.75"
 
 
 LONG_ZH = "今天天气很好，我们一起去公园散步吧。" * 30

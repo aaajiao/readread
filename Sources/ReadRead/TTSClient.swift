@@ -6,7 +6,8 @@ typealias HTTPTransport = @Sendable (URLRequest) async throws -> (Data, URLRespo
 /// HTTP API v2 client for one ready server. Stateless; cheap to create per call.
 struct TTSClient: Sendable {
     /// URLSession's idle timeout: the server sends nothing until a request is
-    /// synthesized, and requests are capped at `AppState.maxRequestCharacters`.
+    /// synthesized, and requests are one sentence (`SpeechChunker`, at most
+    /// `SpeechChunker.maxSpeakCharacters`).
     static let requestTimeout: TimeInterval = 120
 
     let endpoint: ServerEndpoint
@@ -40,7 +41,7 @@ struct TTSClient: Sendable {
 
     func synthesize(_ request: SynthesisRequest) async throws -> SynthesisResult {
         let (data, _) = try await send(makeSynthesizeRequest(request))
-        return try Self.decodeSynthesis(data)
+        return try Self.decodeSynthesis(data, requestedSpeed: request.speed)
     }
 
     func health() async throws -> HealthInfo {
@@ -148,7 +149,9 @@ struct TTSClient: Sendable {
         return .http(status: status, body: text)
     }
 
-    static func decodeSynthesis(_ data: Data) throws -> SynthesisResult {
+    /// `synth_speed` (API v2 addition) is the speed the audio was made at; a server
+    /// without it made it at the requested speed.
+    static func decodeSynthesis(_ data: Data, requestedSpeed: Double) throws -> SynthesisResult {
         struct RawSpan: Decodable {
             let text: String?
             let start: Double?
@@ -166,6 +169,7 @@ struct TTSClient: Sendable {
             let silent: Bool?
             let sentences: [RawSpan]?
             let tokens: [RawSpan]?
+            let synthSpeed: Double?
         }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -185,7 +189,8 @@ struct TTSClient: Sendable {
             silent: response.silent ?? false,
             sentences: (response.sentences ?? []).compactMap(\.span),
             tokens: (response.tokens ?? []).compactMap(\.span),
-            requestID: response.requestId
+            requestID: response.requestId,
+            synthSpeed: response.synthSpeed.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? requestedSpeed
         )
     }
 
@@ -196,11 +201,13 @@ struct TTSClient: Sendable {
     }
 }
 
-/// GET /health.
+/// GET /health. `engine` ("kokoro" | "qwen") and `model` (qwen only) are API v2 additions.
 struct HealthInfo: Codable, Equatable, Sendable {
     let status: String
     let api: Int
     let pid: Int?
     let loaded: [String]?
     let versions: [String: String]?
+    var engine: String? = nil
+    var model: String? = nil
 }

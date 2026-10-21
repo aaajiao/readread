@@ -17,6 +17,9 @@ RR_CACHE_DIR="${READREAD_BUILD_CACHE:-$RR_REPO_DIR/build/cache}"
 RR_LOCK_FILE="$RR_REPO_DIR/tts_server/requirements.lock"
 # shellcheck disable=SC2034 # read by the scripts that source this file
 RR_DEV_LOCK_FILE="$RR_REPO_DIR/tts_server/requirements-dev.txt"
+# The optional Qwen3-TTS engine's lock (install-hq.sh; never bundled).
+# shellcheck disable=SC2034 # read by the scripts that source this file
+RR_HQ_LOCK_FILE="$RR_REPO_DIR/tts_server/requirements-hq.lock"
 
 # ── Output ───────────────────────────────────────────────────────────
 # RR_STEP_LABEL names the step in progress, for an EXIT trap's failure message.
@@ -204,7 +207,8 @@ rr_pip() {
         done <<<"$(env | sed -n 's/^\(PIP_[A-Za-z0-9_]*\)=.*/\1/p; s/^\(PYTHON[A-Za-z0-9_]*\)=.*/\1/p')"
         export PIP_CONFIG_FILE=/dev/null PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1 PYTHONNOUSERSITE=1
         export PIP_CACHE_DIR="$RR_CACHE_DIR/pip"
-        exec "$py" -I -B -m pip "$@"
+        # Not on fd 3: install-hq.sh's JSON stream (a pip build subprocess must not hold it open).
+        exec "$py" -I -B -m pip "$@" 3>&-
     )
 }
 

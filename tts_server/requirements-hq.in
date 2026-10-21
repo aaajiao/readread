@@ -1,0 +1,25 @@
+# ReadRead high-quality engine (Qwen3-TTS through MLX): top-level runtime dependencies of
+# `tts_server.py --engine qwen`. scripts/install-hq.sh installs the hashed lock into
+# $READREAD_HQ_HOME/venv; none of it goes into the app bundle.
+# Edit this file, then run ./scripts/lock-deps.sh to regenerate requirements-hq.lock (hashed).
+# Target: CPython 3.12.15 (python-build-standalone 20261013) on macOS arm64 >= 26.0. The lock is
+# constrained by requirements.lock, so a package both engines use has the same pin in both.
+# Only what the qwen route imports: no onnxruntime, kokoro-onnx, spaCy or espeak.
+
+# MLX and the Qwen3-TTS model code: the versions the lab validated (mlx-audio 0.6.1 is not).
+mlx==0.32.4
+mlx-metal==0.32.4
+mlx-audio==0.6.0
+# mlx-audio asks for transformers>=5.14 (the Qwen tokenizer); 5.20.2 is the lab-validated one.
+transformers==5.20.2
+
+# Text front end shared with the Kokoro engine: frontend_zh.normalize (OpenCC t2s, then misaki's
+# zh_normalization, which imports pypinyin) and frontend_en.normalize (num2words).
+numpy==2.4.3
+misaki==0.9.4
+pypinyin==0.55.0
+opencc==1.4.2
+num2words==0.5.14
+# The build backend for docopt (num2words' dependency, published only as an sdist; see
+# RR_SDIST_PACKAGES in scripts/lib/versions.sh).
+setuptools==84.2.0

@@ -1,14 +1,18 @@
+import AVFoundation
 import Foundation
 
 /// `ReadRead --self-test`: headless end-to-end check of the voice engine through
 /// the real lifecycle code. Starts the server, checks that every `Voice.all` id is
 /// in the server's `GET /voices` for its language, synthesizes one zh (zf_001),
-/// one US English (af_heart) and one UK English (bf_emma) text, stops the server,
-/// confirms every child it launched exited, and prints one JSON line to stdout.
+/// one US English (af_heart) and one UK English (bf_emma) text, reads a zh + en
+/// Markdown fixture through the text pipeline and plays its first three units back to
+/// back through `AudioQueuePlayer` in offline rendering (no audio device), stops the
+/// server, confirms every child it launched exited, and prints one JSON line to stdout.
 /// Each text has English inside it or an out-of-vocabulary word (the espeak-ng
 /// fallback) and digits; every word must come back timed, the audio must be about
 /// as long as a known-good build makes it, and the server log must show no broken
-/// espeak-ng data. Exit status 0 on success, 1 otherwise. Diagnostics go to stderr.
+/// espeak-ng data. Nothing is written outside the log and cache directories (no reading
+/// positions). Exit status 0 on success, 1 otherwise. Diagnostics go to stderr.
 @MainActor
 enum SelfTest {
     struct Case {
@@ -30,6 +34,36 @@ enum SelfTest {
     /// The audio may be this much shorter or longer than `expectedDuration`
     /// (scripts/smoke-test.sh allows the same band).
     static let durationBand: ClosedRange<Double> = 0.8...1.4
+
+    /// The playback check's document: a title (also its first heading), a footnote and a
+    /// table (neither read), Chinese with an English paragraph.
+    static let fixtureTitle = "ReadRead 朗读自检"
+    static let fixtureMarkdown = """
+        # ReadRead 朗读自检
+
+        这是一段中文测试文字，用来检查从文本到声音的整个朗读流程。[^1]
+
+        Then one English sentence.
+
+        | 列 | 值 |
+        | --- | --- |
+        | 甲 | 1 |
+
+        最后一句话在表格后面。
+
+        [^1]: 这条脚注不会被读出来。
+        """
+    /// The units the check expects the pipeline to make of `fixtureMarkdown`, in order.
+    static let fixtureUnits: [(text: String, language: SpeechLanguage)] = [
+        ("ReadRead 朗读自检。", .zh),
+        ("这是一段中文测试文字，用来检查从文本到声音的整个朗读流程。", .zh),
+        ("Then one English sentence.", .en),
+        ("最后一句话在表格后面。", .zh),
+    ]
+    /// How many of them are synthesized and played.
+    static let playedUnits = 3
+    /// Played audio may differ from the units' durations plus their pauses by this much.
+    static let playbackTolerance = 0.05
     /// Server log lines that mean the espeak-ng fallback is broken (its data is
     /// missing or unreadable), which otherwise only drops the words it should read.
     /// scripts/smoke-test.sh (ESPEAK_ERRORS) looks for the same ones.
@@ -72,6 +106,25 @@ enum SelfTest {
         let missing: [String]
     }
 
+    /// The fixture document and its offline playback.
+    struct PlaybackCheck: Encodable {
+        var ok = false
+        /// The document came out as `fixtureUnits` (title first, footnote and table dropped).
+        var documentOK = false
+        var units: [String] = []
+        var languages: [String] = []
+        /// Σ (unit duration + pause) of the played units, by the server's durations.
+        var expectedSeconds: Double?
+        /// Where the played audio ends in the output (the last audible sample, then the rest of
+        /// the last unit and its pause).
+        var renderedSeconds: Double?
+        /// From the first to the last audible sample.
+        var audibleSeconds: Double?
+        /// Largest difference between the output and the units' samples laid end to end.
+        var maxDifference: Double?
+        var error: String?
+    }
+
     struct Report: Encodable {
         var ok = false
         var mode = "self-test"
@@ -83,6 +136,7 @@ enum SelfTest {
         var health: HealthInfo?
         var catalog: CatalogCheck?
         var results: [CaseResult] = []
+        var playback: PlaybackCheck?
         /// Server log lines with a `logMarkers` entry.
         var logProblems: [String] = []
         var stopped = false
@@ -188,6 +242,13 @@ enum SelfTest {
             box.report.results.append(result)
         }
 
+        let playback = await checkPlayback(service: service)
+        diagnostic("playback: \(playback.ok ? "ok" : "FAILED")"
+            + (playback.renderedSeconds.map { String(format: ", rendered %.3f s", $0) } ?? "")
+            + (playback.expectedSeconds.map { String(format: ", expected %.3f s", $0) } ?? "")
+            + (playback.error.map { " – \($0)" } ?? ""))
+        box.report.playback = playback
+
         box.report.logProblems = logProblems(path: server.logPath, since: logOffset)
         for line in box.report.logProblems { diagnostic("server log: \(line)") }
 
@@ -197,7 +258,101 @@ enum SelfTest {
         box.report.childExited = server.lastExit?.pid == endpoint.pid && childrenExited(server: server)
         box.report.ok = box.report.error == nil && healthOK && catalogOK
             && box.report.results.count == cases.count && box.report.results.allSatisfy(\.ok)
+            && box.report.playback?.ok == true
             && box.report.logProblems.isEmpty && box.report.stopped && box.report.childExited
+    }
+
+    /// Build the fixture document, synthesize its first `playedUnits` units and play them
+    /// back to back offline: the output must last as long as their audio plus their pauses.
+    static func checkPlayback(service: any SpeechSynthesizer) async -> PlaybackCheck {
+        var check = PlaybackCheck()
+        let document = DocumentBuilder.fromMarkdown(fixtureMarkdown, title: fixtureTitle, source: .text, sourceLabel: "")
+        check.units = document.units.map(\.speakText)
+        check.languages = document.units.map { $0.language?.rawValue ?? "-" }
+        check.documentOK = document.title == fixtureTitle && document.units.first?.kind == .title
+            && check.units == fixtureUnits.map(\.text) && document.units.map(\.language) == fixtureUnits.map(\.language)
+        guard check.documentOK else {
+            check.error = "the fixture became \(check.units) \(check.languages)"
+            return check
+        }
+        var items: [AudioItem] = []
+        var expected = 0.0
+        do {
+            for unit in document.units.prefix(playedUnits) {
+                guard let language = unit.language else { continue }
+                let request = SynthesisRequest(text: unit.speakText, voice: Voice.defaultVoice(for: language), speed: 1.0)
+                let result = try await service.synthesize(request)
+                items.append(AudioItem(id: unit.id, wav: result.wav, synthSpeed: result.synthSpeed, pause: unit.pauseAfter))
+                expected += result.duration + unit.pauseAfter
+            }
+            check.expectedSeconds = expected
+            let rendered = try renderOffline(items)
+            check.renderedSeconds = rendered.seconds
+            check.audibleSeconds = rendered.audibleSeconds
+            check.maxDifference = Double(rendered.maxDifference)
+            check.ok = abs(rendered.seconds - expected) <= playbackTolerance && rendered.audibleSeconds > expected / 2
+                && rendered.maxDifference < 0.01
+            if !check.ok {
+                check.error = String(format: "rendered %.3f s (audible %.3f s, max difference %.4f), expected %.3f s",
+                                     rendered.seconds, rendered.audibleSeconds, rendered.maxDifference, expected)
+            }
+        } catch {
+            check.error = message(for: error)
+        }
+        return check
+    }
+
+    /// Play `items` one after the other through an offline `AudioQueuePlayer` (the next one
+    /// starts when the previous one finishes, as `PlaybackController` does) and measure where
+    /// the audio landed in the output: `seconds` is the position of the last audible sample
+    /// plus what follows it in the units (the rest of the last one and its pause), so a gap or
+    /// a cut between units shows; `maxDifference` compares the output with the units' samples
+    /// and pauses laid end to end.
+    static func renderOffline(_ items: [AudioItem]) throws -> (seconds: Double, audibleSeconds: Double, maxDifference: Float) {
+        guard let first = items.first else { return (0, 0, 0) }
+        let rate = AudioQueuePlayer.sampleRate
+        var expected: [Float] = []
+        for item in items {
+            expected += try WAVDecoder.decode(item.wav).samples
+            expected += [Float](repeating: 0, count: Int((item.pause * rate).rounded()))
+        }
+        let player = try AudioQueuePlayer(offlineMaximumFrameCount: 4_096)
+        var next = 1
+        var finished = false
+        var playError: (any Error)?
+        player.onFinished = { [unowned player] _ in
+            guard next < items.count else {
+                finished = true
+                return
+            }
+            do {
+                try player.play(items[next])
+            } catch {
+                playError = error
+            }
+            next += 1
+        }
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
+              let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(Double(expected.count) + 4 * rate)),
+              let channel = output.floatChannelData?[0] else {
+            throw AudioOutputError.engine("could not allocate the output buffer")
+        }
+        try player.play(first)
+        while !finished, playError == nil, output.frameLength + 1_024 <= output.frameCapacity {
+            try player.render(1_024, into: output)
+        }
+        if let playError { throw playError }
+        guard finished else { throw AudioOutputError.engine("playback did not finish") }
+        try player.render(AVAudioFrameCount(rate), into: output)  // the last unit's tail
+        let threshold: Float = 0.001
+        let rendered = Int(output.frameLength)
+        guard let lastExpected = expected.lastIndex(where: { abs($0) > threshold }),
+              let firstOutput = (0..<rendered).first(where: { abs(channel[$0]) > threshold }),
+              let lastOutput = (0..<rendered).last(where: { abs(channel[$0]) > threshold }) else {
+            throw AudioOutputError.engine("the output is silent")
+        }
+        let worst = (0..<min(expected.count, rendered)).reduce(Float(0)) { max($0, abs(channel[$1] - expected[$1])) }
+        return (Double(lastOutput + expected.count - lastExpected) / rate, Double(lastOutput - firstOutput) / rate, worst)
     }
 
     /// Every server the lifecycle launched (a replaced or timed-out one too) has

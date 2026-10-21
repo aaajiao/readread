@@ -1,4 +1,5 @@
-"""HTTP API v2: GET /health, GET /voices, POST /synthesize (tts_server/README.md has the details).
+"""HTTP API v2: GET /health, GET /voices, POST /synthesize (tts_server/README.md has the details), for either
+engine (readread_tts.engine).
 
 Every request needs the bearer token and a loopback Host header; every error is JSON,
 {"error": {"code": ..., "message": ...}}. One synthesis runs at a time (Engine.lock). A synthesis whose
@@ -14,7 +15,6 @@ import json
 import logging
 import math
 import os
-import platform
 import re
 import select
 import socket
@@ -111,26 +111,13 @@ def _encodable(text: str) -> bool:
     return True
 
 
-def _versions() -> dict[str, str]:
-    from importlib.metadata import PackageNotFoundError, version
-
-    def get(name: str) -> str:
-        try:
-            return version(name)
-        except PackageNotFoundError:
-            return "unknown"
-
-    return {"kokoro_onnx": get("kokoro-onnx"), "misaki": get("misaki"), "onnxruntime": get("onnxruntime"),
-            "python": platform.python_version()}
-
-
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, engine: Engine, token: str) -> None:
         self.engine = engine
         self.auth = f"Bearer {token}".encode("ascii")
-        self.versions = _versions()
+        self.versions = engine.versions()
         super().__init__(("127.0.0.1", 0), Handler)
         self.port = self.server_address[1]
         self.hosts = frozenset({f"127.0.0.1:{self.port}", f"localhost:{self.port}"})
@@ -288,8 +275,12 @@ class Handler(BaseHTTPRequestHandler):
     # --- endpoints ----------------------------------------------------------------------------------
 
     def _health(self) -> int:
-        self._send_json(200, {"status": "ok", "api": API_VERSION, "pid": os.getpid(),
-                              "loaded": self.server.engine.loaded(), "versions": self.server.versions})
+        engine = self.server.engine
+        health = {"status": "ok", "api": API_VERSION, "pid": os.getpid(), "loaded": engine.loaded(),
+                  "versions": self.server.versions, "engine": engine.name}
+        if engine.model is not None:
+            health["model"] = engine.model
+        self._send_json(200, health)
         return 200
 
     def _voices(self) -> int:
@@ -336,6 +327,7 @@ class Handler(BaseHTTPRequestHandler):
         headers = {"X-ReadRead-Request-Id": _UNSAFE.sub("_", request.request_id) or "-"}
         if request.format == "wav":
             headers["X-ReadRead-Duration"] = f"{result.duration:.3f}"
+            headers["X-ReadRead-Synth-Speed"] = str(float(result.synth_speed))
             self._send(200, wav, "audio/wav", headers)
             return 200
         self._send_json(200, {
@@ -347,6 +339,7 @@ class Handler(BaseHTTPRequestHandler):
             "voice": voice.id,
             "lang": voice.route,
             "speed": request.speed,
+            "synth_speed": float(result.synth_speed),
             "sentences": result.sentences,
             "tokens": result.tokens,
             "timing_ms": {"frontend": round(result.frontend_ms), "synth": round(result.synth_ms)},

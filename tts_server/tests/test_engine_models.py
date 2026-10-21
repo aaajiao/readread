@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 
 from readread_tts import audio
-from readread_tts.engine import MAX_PHONEMES, SENTENCE_GAP_S, Cancelled, VoiceError, soft_breaks
+from readread_tts.engine import SENTENCE_GAP_S, Cancelled, VoiceError
+from readread_tts.engine_kokoro import MAX_PHONEMES, soft_breaks
 
 SR = audio.SAMPLE_RATE
 FRAME = int(0.005 * SR)

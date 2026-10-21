@@ -83,14 +83,18 @@ final class VoicePreferencesTests: XCTestCase {
 
     func testSaveStoresTheVoiceUnderItsOwnLanguage() throws {
         let emma = try XCTUnwrap(Voice.voice(id: "bf_emma"))
-        prefs.save(voice: emma, speed: 1.2000000000000002, language: .en)
+        prefs.saveVoice(emma)
+        prefs.saveSpeed(1.2000000000000002, for: .en)
         XCTAssertEqual(store.string(forKey: "voice_en"), "bf_emma")
         XCTAssertEqual(store.object(forKey: "speed_en") as? Double, 1.2)
 
         let zh = try XCTUnwrap(Voice.voice(id: "zm_009"))
-        prefs.save(voice: zh, speed: 1.0, language: .en)
+        prefs.saveVoice(zh)
         XCTAssertEqual(store.string(forKey: "voice_zh"), "zm_009")
         XCTAssertEqual(store.string(forKey: "voice_en"), "bf_emma", "never a Chinese voice under English")
+        XCTAssertEqual(prefs.voice(for: .zh), zh)
+        XCTAssertEqual(prefs.speed(for: .en), 1.2)
+        XCTAssertEqual(prefs.speed(for: .zh), 1.0, "a speed is per document language")
     }
 
     func testLastLanguageRoundTrips() {

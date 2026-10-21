@@ -1,0 +1,115 @@
+title: 语音合成
+source: zh.wikipedia.org
+language: zh
+blocks: 32, units: 47
+
+# 0 title
+  0 zh title | 语音合成。
+
+# 1 paragraph
+  1 zh | 語音合成 是將人類語音用人工的方式所產生。
+  2 zh | 若是將電腦系統用在語音合成上，則稱為語音合成器，而語音合成器可以用軟/硬體所實現。
+  3 zh | 文字轉語音（Text-To-Speech，TTS）系統則是將一般語言的文字轉換為語音，其他的系統可以描繪語言符號的表示方式，就像音標轉換至語音一樣。
+
+# 2 paragraph
+  4 zh | 而合成後的語音則是利用在資料庫內的許多已錄好的語音連接起來。
+  5 zh | 系統則因為儲存的語音單元大小不同而有所差異，若是要儲存phone以及diphone的話，系統必須提供大量的儲存空間，但是在語意上或許會不清楚。
+  6 zh | 而用在特定的使用領域上，儲存整字或整句的方式可以達到高品質的語音輸出。
+  7 zh | 另外，包含了聲道模型以及其他的人類聲音特徵參數的合成器則可以創造出完整的合成聲音輸出。
+
+# 3 paragraph
+  8 zh | 一個語音合成器的品質通常是決定於人聲的相似度以及語意是否能被了解。
+  9 zh | 一個清晰的文字轉語音程式應該提供人類在視覺受到傷害或是得到失讀症時，能夠聽到並且在個人電腦上完成工作。
+  10 zh | 從80年代早期開始，許多的電腦作業系統已經包含了語音合成器了。
+
+# 4 heading
+  11 zh heading | 文字處理的概觀。
+
+# 5 heading
+  12 zh heading | 歷史。
+
+# 6 paragraph
+  13 zh | 早在17世紀就有法國人研發機械式的說話裝置。
+  14 zh | 直到19世紀， 貝爾實驗室 對於電子語音合成技術的研究，才開啟近代語音合成技術的發展。
+  15 zh | 貝爾實驗室在1939年製作出第一個電子語音合成器VODER，是一種利用共振峰原理所製作的合成器。
+  16 zh | 1960年，瑞典語言學家G. Fant則提出利用線性預測編碼技術（LPC）來作為語音合成分析技術，並推動了日後的發展。
+  17 zh | 後來1980年代Moulines E和Charpentier F提出新的語音合成演算法PSOLA，此技術可以合成比較自然的語音。
+
+# 7 heading
+  18 zh heading | 合成器技術。
+
+# 8 heading
+  19 zh heading | 串接合成。
+
+# 9 heading
+  20 zh heading | 單位選擇合成。
+
+# 10 paragraph
+  21 zh | 這通常是使用字詞預錄的方式，將各字詞的發音預先錄製好，經處理後存放在資料庫中。
+  22 zh | 使用時再將預發音的字句斷成字詞，再把發音的資料自資料庫中取出，交由 DSP 去處理發音的合成。
+
+# 11 heading
+  23 zh heading | Diphone合成。
+
+# 12 heading
+  24 zh heading | Domain-specific合成。
+
+# 13 heading
+  25 zh heading | 共振峰合成。
+
+# 14 heading
+  26 zh heading | 發音合成。
+
+# 15 heading
+  27 zh heading | HMM基礎合成。
+
+# 16 heading
+  28 zh heading | 正弦波合成。
+
+# 17 heading
+  29 zh heading | 深度學習合成。
+
+# 18 paragraph
+  30 zh | 深度學習語音合成使用深度神經網絡（DNN）從文本（文本到語音）或頻譜（聲碼器）產生人工語音。
+  31 zh | 深度神經網絡使用大量錄製的語音進行訓練，如果是文本到語音系統，則使用和語音相對的文本。
+
+# 19 paragraph
+  32 zh | 基於DNN的語音合成器正在接近人聲的自然度。
+  33 zh | 該方法的缺點的例子是當數據不充分時強健性較低，缺乏可控性，自動回歸模型的性能低。
+  34 zh | 一些局限性（如缺乏可控性）可以通過未來的研究得到解決。
+
+# 20 heading
+  35 zh heading | 相关比赛。
+
+# 21 listItem
+  36 en | Blizzard Challenge
+
+# 22 listItem
+  37 en | voice conversion
+
+# 23 heading
+  38 zh heading | 含有語音合成器的軟體。
+
+# 24 listItem
+  39 zh | NVDA （开源多国语言 螢幕報讀軟體）
+
+# 25 listItem
+  40 zh | 台灣 工研院 資通所語音團隊開發出的mTTS
+
+# 26 listItem
+  41 zh | JAWS（商業付費 螢幕報讀軟體）
+
+# 27 listItem
+  42 zh | 內建於蘋果電腦相關產品的 VoiceOver Utility
+
+# 28 listItem
+  43 zh | Android 1.6版加入支援語音合成的功能。
+
+# 29 listItem
+  44 zh | 微軟在1995年開始，開發了一套 Microsoft Speech API，微軟的一些作業系統或軟體有提供支援語音功能。
+
+# 30 listItem
+  45 zh | VOCALOID 及 VOICEROID，前者偏重歌唱而后者偏重 TTS。
+
+# 31 heading
+  46 zh heading | 語音合成標記語言。

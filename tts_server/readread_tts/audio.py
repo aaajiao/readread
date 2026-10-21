@@ -1,4 +1,4 @@
-"""Audio helpers: trailing-silence trim, silence, PCM16 WAV encoding."""
+"""Audio helpers: trailing- and leading-silence trim, silence, PCM16 WAV encoding."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import numpy as np
 
 SAMPLE_RATE = 24000
 TAIL_S = 0.040  # silence kept after the last speech frame of a sentence
+LEAD_S = 0.030  # silence kept before the first speech frame (trim_head, the Qwen engine)
 _FRAME_S = 0.005
 _CERTAIN_DB = -40.0  # frames this far below the loudest frame are certainly speech ...
 _SPEECH_DB = -50.0  # ... and frames down to here still are, if they follow speech closely
@@ -45,6 +46,36 @@ def trim_tail(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, tail: float = T
     fade = min(int(_FADE_S * sample_rate), end - speech_end)
     if fade > 0:
         out[end - fade:] *= np.linspace(1.0, 0.0, fade, dtype=np.float32)
+    return out
+
+
+def trim_head(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, lead: float = LEAD_S) -> np.ndarray:
+    """Cut the silence before the first speech frame down to `lead` seconds: trim_tail's rule, mirrored.
+
+    Speech starts at the first frame within 50 dB of the loudest one, looked for no earlier than 0.1 s before the
+    first frame within 40 dB, so low-level noise well before the onset never counts. Only the kept lead is faded in.
+    """
+    n = len(audio)
+    if n == 0:
+        return audio.astype(np.float32, copy=False)
+    frame = max(1, int(_FRAME_S * sample_rate))
+    count = -(-n // frame)
+    padded = np.zeros(count * frame, dtype=np.float64)
+    padded[:n] = audio
+    rms = np.sqrt((padded.reshape(count, frame) ** 2).mean(axis=1))
+    peak = float(rms.max())
+    keep = int(round(lead * sample_rate))
+    if peak <= 0.0:
+        return np.zeros(min(n, keep), dtype=np.float32)
+    certain = int(np.flatnonzero(rms > peak * 10 ** (_CERTAIN_DB / 20))[0])
+    first = max(0, certain - int(round(_DECAY_S / _FRAME_S)))
+    speech = first + int(np.flatnonzero(rms[first:certain + 1] > peak * 10 ** (_SPEECH_DB / 20))[0])
+    speech_start = speech * frame
+    start = max(0, speech_start - keep)
+    out = np.array(audio[start:], dtype=np.float32)
+    fade = min(int(_FADE_S * sample_rate), speech_start - start)
+    if fade > 0:
+        out[:fade] *= np.linspace(0.0, 1.0, fade, dtype=np.float32)
     return out
 
 

@@ -284,14 +284,16 @@ final class FakeTransport: Sendable {
     }
 }
 
-/// A v2 /synthesize JSON body (format "json").
-func synthesisJSON(requestID: String = "rr-test", duration: Double = 1.25, silent: Bool = false) -> String {
-    """
+/// A v2 /synthesize JSON body (format "json"); `synthSpeed` adds the `synth_speed` field.
+func synthesisJSON(requestID: String = "rr-test", duration: Double = 1.25, silent: Bool = false,
+                   synthSpeed: Double? = nil) -> String {
+    let speedField = synthSpeed.map { ",\"synth_speed\":\($0)" } ?? ""
+    return """
     {"request_id":"\(requestID)","sample_rate":24000,"duration":\(duration),\
     "audio":"\(minimalWAV.base64EncodedString())","silent":\(silent),"voice":"zf_001","lang":"zh","speed":1.0,\
     "sentences":[{"text":"你好。","start":0.0,"end":0.6},{"text":"再见。","start":0.6,"end":1.25}],\
     "tokens":[{"text":"你好","start":0.05,"end":0.5},{"text":"broken"}],\
-    "timing_ms":{"frontend":3,"synth":120}}
+    "timing_ms":{"frontend":3,"synth":120}\(speedField)}
     """
 }
 
@@ -299,8 +301,19 @@ func synthesisJSON(requestID: String = "rr-test", duration: Double = 1.25, silen
 
 @MainActor
 final class FakeSynthesizer: SpeechSynthesizer {
+    var engineID = "kokoro"
+    var honoursSpeed = true
     var requests: [SynthesisRequest] = []
-    var handler: (SynthesisRequest) async throws -> SynthesisResult = { _ in FakeSynthesizer.result() }
+    /// Answers a request (after any hold); by default audio whose synthSpeed is the request's
+    /// speed (1.0 when `honoursSpeed` is false) and whose duration is `duration(of:)`.
+    var handler: ((SynthesisRequest) async throws -> SynthesisResult)?
+    /// Seconds of audio a request's text gets by default.
+    var duration: (String) -> Double = { _ in 1 }
+    /// While true, requests wait (cancellably) until `release()` lets them through.
+    var holding = false
+    private var releases = 0
+    /// Requests waiting for `release()`.
+    private(set) var held = 0
     /// Errors to throw, keyed by request number (0 = the first request).
     var failures: [Int: any Error] = [:]
     /// Requests whose task was cancelled while in flight.
@@ -321,14 +334,27 @@ final class FakeSynthesizer: SpeechSynthesizer {
     func synthesize(_ request: SynthesisRequest) async throws -> SynthesisResult {
         let number = requests.count
         requests.append(request)
-        if let failure = failures[number] { throw failure }
         do {
-            return try await handler(request)
+            if holding {
+                held += 1
+                defer { held -= 1 }
+                while holding && releases == 0 { try await Task.sleep(for: .milliseconds(1)) }
+                if releases > 0 { releases -= 1 }
+            }
+            if let failure = failures[number] { throw failure }
+            if let handler { return try await handler(request) }
+            try Task.checkCancellation()
+            return FakeSynthesizer.result(
+                text: request.text, duration: duration(request.text),
+                synthSpeed: honoursSpeed ? request.speed : 1.0, requestID: request.requestID)
         } catch is CancellationError {
             cancelledCount += 1
             throw CancellationError()
         }
     }
+
+    /// Let `count` held requests through (and ones that arrive later, up to `count`).
+    func release(_ count: Int = 1) { releases += count }
 
     /// Suspend every request until it is cancelled.
     func hangUntilCancelled() {
@@ -358,27 +384,100 @@ final class FakeSynthesizer: SpeechSynthesizer {
     func setPlaybackActive(_ active: Bool) { playbackActiveHistory.append(active) }
     func shutdown() { shutdownCount += 1 }
 
-    nonisolated static func result(text: String = "x") -> SynthesisResult {
-        SynthesisResult(wav: minimalWAV, duration: 1, sampleRate: 24_000, silent: false,
-                        sentences: [TimedSpan(text: text, start: 0, end: 1)], tokens: [], requestID: nil)
+    nonisolated static func result(text: String = "x", duration: Double = 1, synthSpeed: Double = 1,
+                                   requestID: String? = nil) -> SynthesisResult {
+        SynthesisResult(wav: minimalWAV, duration: duration, sampleRate: 24_000, silent: false,
+                        sentences: [TimedSpan(text: text, start: 0, end: duration)], tokens: [], requestID: requestID,
+                        synthSpeed: synthSpeed)
     }
 }
 
+/// An `AudioOutput` the test drives: `finish()` ends the current item.
 @MainActor
-final class FakeAudioPlayer: AudioPlaying {
-    var played: [Data] = []
-    var stopCount = 0
-    var error: (any Error)?
+final class FakeAudioOutput: AudioOutput {
+    var onFinished: ((Int) -> Void)?
+    var onFailure: ((any Error) -> Void)?
+    var userSpeed: Double = 1.0
+    var currentTime: Double = 0
+    /// Every item `play` accepted, in order.
+    private(set) var played: [AudioItem] = []
+    private(set) var current: AudioItem?
+    private(set) var isPaused = false
+    private(set) var stopCount = 0
+    private(set) var pauseCount = 0
+    private(set) var resumeCount = 0
+    var playError: (any Error)?
+    var resumeError: (any Error)?
 
-    func playAndWait(data: Data) async throws {
-        if let error { throw error }
-        played.append(data)
-        await Task.yield()
+    var playedIDs: [Int] { played.map(\.id) }
+    var isPlaying: Bool { current != nil && !isPaused }
+
+    func play(_ item: AudioItem) throws {
+        if let playError { throw playError }
+        played.append(item)
+        current = item
+        isPaused = false
+        currentTime = 0
     }
 
-    func stop() { stopCount += 1 }
-    func pause() {}
-    func resume() {}
+    func pause() {
+        pauseCount += 1
+        if current != nil { isPaused = true }
+    }
+
+    func resume() throws {
+        if let resumeError { throw resumeError }
+        resumeCount += 1
+        isPaused = false
+    }
+
+    func stop() {
+        stopCount += 1
+        current = nil
+        isPaused = false
+    }
+
+    /// The current item (audio and pause) played to its end.
+    func finish(file: StaticString = #filePath, line: UInt = #line) {
+        guard let item = current else { return XCTFail("nothing is playing", file: file, line: line) }
+        current = nil
+        onFinished?(item.id)
+    }
+
+    /// The output device went away for good.
+    func fail(_ error: any Error) {
+        current = nil
+        onFailure?(error)
+    }
+}
+
+/// Now Playing updates, kept for the test.
+@MainActor
+final class FakeNowPlaying: NowPlayingPublishing {
+    var onCommand: ((NowPlayingCommand) -> Void)?
+    private(set) var updates: [NowPlayingInfo] = []
+    private(set) var clearCount = 0
+
+    var last: NowPlayingInfo? { updates.last }
+
+    func update(_ info: NowPlayingInfo) { updates.append(info) }
+    func clear() { clearCount += 1 }
+}
+
+/// Reading positions in memory.
+@MainActor
+final class MemoryPositions: ReadingPositionStoring {
+    var positions: [String: ReadingPosition] = [:]
+    private(set) var saveCount = 0
+
+    func position(for key: String) -> ReadingPosition? { positions[key] }
+
+    func save(_ position: ReadingPosition, for key: String) {
+        saveCount += 1
+        positions[key] = position
+    }
+
+    func removePosition(for key: String) { positions.removeValue(forKey: key) }
 }
 
 // MARK: - Helpers
@@ -421,4 +520,26 @@ final class MemoryPreferences: PreferencesStore {
     func string(forKey defaultName: String) -> String? { values[defaultName] as? String }
     func set(_ value: Any?, forKey defaultName: String) { values[defaultName] = value }
     func removeObject(forKey defaultName: String) { values.removeValue(forKey: defaultName) }
+}
+
+// MARK: - Fixtures and files
+
+/// Tests/ReadReadTests/Fixtures, read by path (the test target has no SwiftPM resources).
+enum Fixtures {
+    static let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Fixtures")
+
+    static func url(_ path: String) -> URL { directory.appending(path: path) }
+    static func data(_ path: String) throws -> Data { try Data(contentsOf: url(path)) }
+    static func text(_ path: String) throws -> String { String(decoding: try data(path), as: UTF8.self) }
+}
+
+extension XCTestCase {
+    /// A new empty directory under the temporary directory, removed when the test ends.
+    func makeTemporaryDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "ReadReadTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return directory
+    }
 }

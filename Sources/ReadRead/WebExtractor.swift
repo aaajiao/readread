@@ -1,25 +1,42 @@
 import Foundation
 
-struct ExtractedContent: Sendable {
-    let title: String
-    let text: String
-    let language: String
+/// A page as defuddle.md returns it, its frontmatter split off.
+struct WebPage: Sendable, Equatable {
+    /// The page title without the site's suffix (" - Wikipedia"); nil when there is none.
+    let title: String?
+    let markdown: String
+    /// The domain for the header (www. dropped).
     let domain: String
-    let wordCount: Int
 }
 
-enum WebExtractorError: LocalizedError {
+/// A local text or Markdown file, decoded.
+struct LocalFile: Sendable, Equatable {
+    /// The frontmatter title, else the file name without its extension.
+    let title: String
+    /// False when `title` is only the file name (it is shown, not read aloud).
+    let titleFromMetadata: Bool
+    /// The file name with its extension, for the header.
+    let fileName: String
+    let body: String
+    let isMarkdown: Bool
+}
+
+enum WebExtractorError: LocalizedError, Equatable {
     case invalidURL
     case fetchFailed(Int)
-    case noContent
-    case fileReadFailed
+    /// defuddle.md answered with its error JSON (`{"error":"Timed out fetching page after 10s"}`).
+    case service(String)
+    case fileReadFailed(String)
+    case fileTooLarge(Int)
 
     var errorDescription: String? {
         switch self {
         case .invalidURL: return "Invalid URL"
         case .fetchFailed(let code): return "Failed to fetch content (HTTP \(code))"
-        case .noContent: return "No readable content found"
-        case .fileReadFailed: return "Failed to read file"
+        case .service(let message): return "defuddle.md could not extract the page: \(message)"
+        case .fileReadFailed(let reason): return "Failed to read file: \(reason)"
+        case .fileTooLarge(let bytes):
+            return "The file is too large to read (\(bytes / 1_000_000) MB; the limit is \(WebExtractor.maxFileBytes / 1_000_000) MB)."
         }
     }
 }
@@ -28,42 +45,64 @@ enum WebExtractor {
 
     /// Total number of fetch attempts before giving up (1 initial + retries).
     static let maxAttempts = 3
+    /// Larger files are refused rather than decoded and chunked on the spot.
+    static let maxFileBytes = 32_000_000
+    static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn"]
 
-    /// Fetch readable content from a URL via Defuddle API
-    static func extractFromURL(_ url: URL) async throws -> ExtractedContent {
-        // Build defuddle.md URL: strip protocol from original URL
+    /// Fetch a page through the Defuddle API: https://defuddle.md/{url without its scheme}.
+    static func extractFromURL(
+        _ url: URL,
+        fetch: @Sendable (URL) async throws -> Data = { try await fetchWithRetry(from: $0) }
+    ) async throws -> WebPage {
+        guard let defuddleURL = defuddleURL(for: url) else { throw WebExtractorError.invalidURL }
+        let data = try await fetch(defuddleURL)
+        try Task.checkCancellation()
+        // defuddle.md always answers in UTF-8: no guessing (a stray control character would
+        // otherwise make the legacy heuristics read the page as GB18030).
+        let text = TextDecoding.sanitize(String(decoding: data, as: UTF8.self))
+        if let message = serviceError(text) { throw WebExtractorError.service(message) }
+        let split = Frontmatter.split(text)
+        let site = split.metadata["site"] ?? ""
+        let title = split.metadata["title"].map { stripSiteSuffix($0, site: site) }.flatMap { $0.isEmpty ? nil : $0 }
+        let domain = split.metadata["domain"].flatMap { $0.isEmpty ? nil : $0 } ?? url.host() ?? ""
+        return WebPage(title: title, markdown: split.body, domain: displayDomain(domain))
+    }
+
+    static func defuddleURL(for url: URL) -> URL? {
         var path = url.absoluteString
-        for prefix in ["https://", "http://"] {
-            if path.hasPrefix(prefix) {
-                path = String(path.dropFirst(prefix.count))
-                break
-            }
+        for prefix in ["https://", "http://"] where path.lowercased().hasPrefix(prefix) {
+            path = String(path.dropFirst(prefix.count))
+            break
         }
+        return URL(string: "https://defuddle.md/\(path)")
+    }
 
-        guard let defuddleURL = URL(string: "https://defuddle.md/\(path)") else {
-            throw WebExtractorError.invalidURL
+    /// `{"error": "…"}` instead of Markdown.
+    static func serviceError(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}"),
+              let object = try? JSONSerialization.jsonObject(with: Data(trimmed.utf8)) as? [String: Any],
+              let error = object["error"] else { return nil }
+        return (error as? String) ?? ((error as? [String: Any])?["message"] as? String) ?? "\(error)"
+    }
+
+    /// "Speech synthesis - Wikipedia" → "Speech synthesis" when the suffix names the site.
+    static func stripSiteSuffix(_ title: String, site: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        for separator in [" - ", " | ", " – ", " — ", " :: ", " · ", "_"] {
+            guard let range = trimmed.range(of: separator, options: .backwards) else { continue }
+            let suffix = trimmed[range.upperBound...].trimmingCharacters(in: .whitespaces).lowercased()
+            let siteName = site.lowercased()
+            let namesSite = !siteName.isEmpty && (suffix == siteName || suffix.contains(siteName) || siteName.contains(suffix))
+            let isWiki = suffix.contains("wikipedia") || suffix.contains("维基百科") || suffix.contains("維基百科")
+            let head = trimmed[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+            if (namesSite || isWiki), !head.isEmpty, !suffix.isEmpty { return head }
         }
+        return trimmed
+    }
 
-        let data = try await fetchWithRetry(from: defuddleURL)
-
-        guard let markdown = String(data: data, encoding: .utf8), !markdown.isEmpty else {
-            throw WebExtractorError.noContent
-        }
-
-        let (metadata, body) = parseFrontmatter(markdown)
-        let plainText = stripMarkdown(body)
-
-        guard !plainText.isEmpty else {
-            throw WebExtractorError.noContent
-        }
-
-        return ExtractedContent(
-            title: metadata["title"] ?? url.host() ?? "Untitled",
-            text: plainText,
-            language: metadata["language"] ?? "en",
-            domain: metadata["domain"] ?? url.host() ?? "",
-            wordCount: Int(metadata["word_count"] ?? "0") ?? plainText.split(separator: " ").count
-        )
+    static func displayDomain(_ domain: String) -> String {
+        domain.lowercased().hasPrefix("www.") ? String(domain.dropFirst(4)) : domain
     }
 
     // MARK: - Fetching
@@ -130,125 +169,34 @@ enum WebExtractor {
         }
     }
 
-    /// Read a local text or markdown file
-    static func readFile(_ url: URL) async throws -> ExtractedContent {
+    // MARK: - Files
+
+    /// Read a local text or Markdown file in any encoding `TextDecoding` knows (H10).
+    static func readFile(_ url: URL) async throws -> LocalFile {
         let gotAccess = url.startAccessingSecurityScopedResource()
         defer {
             if gotAccess { url.stopAccessingSecurityScopedResource() }
         }
-
-        guard let data = try? Data(contentsOf: url),
-              let content = String(data: data, encoding: .utf8) else {
-            throw WebExtractorError.fileReadFailed
+        let data: Data
+        do {
+            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            if size > maxFileBytes { throw WebExtractorError.fileTooLarge(size) }
+            data = try Data(contentsOf: url)
+        } catch let error as WebExtractorError {
+            throw error
+        } catch {
+            throw WebExtractorError.fileReadFailed(error.localizedDescription)
         }
-
-        let fileName = url.deletingPathExtension().lastPathComponent
-        let ext = url.pathExtension.lowercased()
-
-        let plainText: String
-        if ext == "md" || ext == "markdown" {
-            let (_, body) = parseFrontmatter(content)
-            plainText = stripMarkdown(body)
-        } else {
-            plainText = content
+        try Task.checkCancellation()
+        let text = try TextDecoding.decode(data).text
+        let fileName = url.lastPathComponent
+        let baseName = url.deletingPathExtension().lastPathComponent
+        guard markdownExtensions.contains(url.pathExtension.lowercased()) else {
+            return LocalFile(title: baseName, titleFromMetadata: false, fileName: fileName, body: text, isMarkdown: false)
         }
-
-        return ExtractedContent(
-            title: fileName,
-            text: plainText.trimmingCharacters(in: .whitespacesAndNewlines),
-            language: "",
-            domain: "",
-            wordCount: plainText.split(separator: " ").count
-        )
-    }
-
-    // MARK: - Parsing
-
-    static func parseFrontmatter(_ content: String) -> (metadata: [String: String], body: String) {
-        guard content.hasPrefix("---\n") else {
-            return ([:], content)
-        }
-
-        let withoutPrefix = String(content.dropFirst(4))
-        guard let endRange = withoutPrefix.range(of: "\n---\n") else {
-            return ([:], content)
-        }
-
-        let yaml = String(withoutPrefix[..<endRange.lowerBound])
-        let body = String(withoutPrefix[endRange.upperBound...])
-
-        var metadata: [String: String] = [:]
-        for line in yaml.split(separator: "\n") {
-            let parts = line.split(separator: ":", maxSplits: 1)
-            if parts.count == 2 {
-                let key = parts[0].trimmingCharacters(in: .whitespaces)
-                var value = parts[1].trimmingCharacters(in: .whitespaces)
-                // Remove surrounding quotes
-                if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
-                    value = String(value.dropFirst().dropLast())
-                }
-                metadata[key] = value
-            }
-        }
-
-        return (metadata, body)
-    }
-
-    static func stripMarkdown(_ markdown: String) -> String {
-        var text = markdown
-
-        // Remove images
-        text = text.replacingOccurrences(
-            of: #"!\[.*?\]\(.*?\)"#, with: "", options: .regularExpression)
-
-        // Convert links to just the link text
-        text = text.replacingOccurrences(
-            of: #"\[([^\]]+)\]\(.*?\)"#, with: "$1", options: .regularExpression)
-
-        // Remove fenced code blocks
-        text = text.replacingOccurrences(
-            of: #"```[\s\S]*?```"#, with: "", options: .regularExpression)
-
-        // Remove inline code
-        text = text.replacingOccurrences(
-            of: #"`([^`]+)`"#, with: "$1", options: .regularExpression)
-
-        // Remove heading markers
-        text = text.replacingOccurrences(
-            of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)
-
-        // Remove horizontal rules — must run before the bold/italic step below,
-        // otherwise whole-line `***`/`___` rules get consumed by the emphasis
-        // regexes and are never recognized as rules.
-        text = text.replacingOccurrences(
-            of: #"(?m)^[\-\*_]{3,}\s*$"#, with: "", options: .regularExpression)
-
-        // Remove bold/italic
-        text = text.replacingOccurrences(
-            of: #"\*{1,3}(.+?)\*{1,3}"#, with: "$1", options: .regularExpression)
-        text = text.replacingOccurrences(
-            of: #"_{1,3}(.+?)_{1,3}"#, with: "$1", options: .regularExpression)
-
-        // Remove blockquote markers
-        text = text.replacingOccurrences(
-            of: #"(?m)^>\s*"#, with: "", options: .regularExpression)
-
-        // Remove unordered list markers
-        text = text.replacingOccurrences(
-            of: #"(?m)^[\-\*\+]\s+"#, with: "", options: .regularExpression)
-
-        // Remove ordered list markers
-        text = text.replacingOccurrences(
-            of: #"(?m)^\d+\.\s+"#, with: "", options: .regularExpression)
-
-        // Remove HTML tags
-        text = text.replacingOccurrences(
-            of: #"<[^>]+>"#, with: "", options: .regularExpression)
-
-        // Collapse excessive newlines
-        text = text.replacingOccurrences(
-            of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
-
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let split = Frontmatter.split(text)
+        let title = split.metadata["title"].flatMap { $0.isEmpty ? nil : $0 }
+        return LocalFile(title: title ?? baseName, titleFromMetadata: title != nil, fileName: fileName,
+                         body: split.body, isMarkdown: true)
     }
 }

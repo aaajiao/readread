@@ -77,7 +77,7 @@ final class TTSClientTests: XCTestCase {
     // MARK: - Decoding
 
     func testDecodesAudioSentencesAndTokens() throws {
-        let result = try TTSClient.decodeSynthesis(Data(synthesisJSON(requestID: "rr-abc").utf8))
+        let result = try TTSClient.decodeSynthesis(Data(synthesisJSON(requestID: "rr-abc").utf8), requestedSpeed: 1.0)
         XCTAssertEqual(result.wav, minimalWAV)
         XCTAssertEqual(result.sampleRate, 24_000)
         XCTAssertEqual(result.duration, 1.25)
@@ -89,21 +89,54 @@ final class TTSClientTests: XCTestCase {
         XCTAssertEqual(result.tokens, [TimedSpan(text: "你好", start: 0.05, end: 0.5)], "incomplete spans are dropped")
     }
 
+    func testSynthSpeedIsTheServersWhenItSendsOne() throws {
+        // Qwen always synthesizes at 1.0 and says so; the player time-stretches.
+        let reported = try TTSClient.decodeSynthesis(Data(synthesisJSON(synthSpeed: 1.0).utf8), requestedSpeed: 1.4)
+        XCTAssertEqual(reported.synthSpeed, 1.0)
+        let kokoro = try TTSClient.decodeSynthesis(Data(synthesisJSON(synthSpeed: 1.4).utf8), requestedSpeed: 1.4)
+        XCTAssertEqual(kokoro.synthSpeed, 1.4)
+    }
+
+    func testSynthSpeedFallsBackToTheRequestedSpeed() throws {
+        // A v0.2.0 server has no synth_speed field: it honoured the requested speed.
+        let result = try TTSClient.decodeSynthesis(Data(synthesisJSON().utf8), requestedSpeed: 1.3)
+        XCTAssertEqual(result.synthSpeed, 1.3)
+        let nonsense = try TTSClient.decodeSynthesis(Data(synthesisJSON(synthSpeed: 0).utf8), requestedSpeed: 0.8)
+        XCTAssertEqual(nonsense.synthSpeed, 0.8, "a speed of 0 is not a speed")
+    }
+
+    func testSynthesizeReportsTheSpeedTheAudioWasMadeAt() async throws {
+        let withField = FakeTransport(fallback: .json(status: 200, body: synthesisJSON(synthSpeed: 1.0)))
+        let qwen = try await TTSClient(endpoint: endpoint, transport: withField.transport).synthesize(try request(speed: 1.5))
+        XCTAssertEqual(qwen.synthSpeed, 1.0)
+        let without = FakeTransport()
+        let old = try await TTSClient(endpoint: endpoint, transport: without.transport).synthesize(try request(speed: 1.5))
+        XCTAssertEqual(old.synthSpeed, 1.5)
+    }
+
+    func testHealthKeepsTheEngineAndModel() async throws {
+        let body = #"{"status":"ok","api":2,"pid":7,"loaded":["zh"],"versions":{},"engine":"qwen","model":"1.7b"}"#
+        let fake = FakeTransport(fallback: .json(status: 200, body: body))
+        let health = try await TTSClient(endpoint: endpoint, transport: fake.transport).health()
+        XCTAssertEqual(health.engine, "qwen")
+        XCTAssertEqual(health.model, "1.7b")
+    }
+
     func testSilentFlagIsKept() throws {
-        XCTAssertTrue(try TTSClient.decodeSynthesis(Data(synthesisJSON(silent: true).utf8)).silent)
+        XCTAssertTrue(try TTSClient.decodeSynthesis(Data(synthesisJSON(silent: true).utf8), requestedSpeed: 1.0).silent)
     }
 
     func testAudioThatIsNotWAVIsRejected() {
         let notWAV = Data("hello world, not a wav".utf8).base64EncodedString()
         let json = #"{"sample_rate":24000,"duration":1,"audio":"\#(notWAV)"}"#
-        XCTAssertThrowsError(try TTSClient.decodeSynthesis(Data(json.utf8))) { error in
+        XCTAssertThrowsError(try TTSClient.decodeSynthesis(Data(json.utf8), requestedSpeed: 1.0)) { error in
             guard case .badResponse? = error as? TTSError else { return XCTFail("\(error)") }
         }
-        XCTAssertThrowsError(try TTSClient.decodeSynthesis(Data(#"{"sample_rate":24000,"duration":1,"audio":"%%%"}"#.utf8)))
+        XCTAssertThrowsError(try TTSClient.decodeSynthesis(Data(#"{"sample_rate":24000,"duration":1,"audio":"%%%"}"#.utf8), requestedSpeed: 1.0))
     }
 
     func testMissingFieldsAreABadResponse() {
-        XCTAssertThrowsError(try TTSClient.decodeSynthesis(Data(#"{"audio":"UklGRg=="}"#.utf8))) { error in
+        XCTAssertThrowsError(try TTSClient.decodeSynthesis(Data(#"{"audio":"UklGRg=="}"#.utf8), requestedSpeed: 1.0)) { error in
             guard case .badResponse(let message)? = error as? TTSError else { return XCTFail("\(error)") }
             XCTAssertTrue(message.hasPrefix("synthesize:"))
         }

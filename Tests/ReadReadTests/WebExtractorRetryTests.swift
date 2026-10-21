@@ -21,7 +21,8 @@ final class WebExtractorRetryTests: XCTestCase {
         XCTAssertTrue(WebExtractor.isRetryable(error: URLError(.cannotConnectToHost)))
         XCTAssertFalse(WebExtractor.isRetryable(error: URLError(.badURL)))
         XCTAssertFalse(WebExtractor.isRetryable(error: URLError(.unsupportedURL)))
-        XCTAssertFalse(WebExtractor.isRetryable(error: WebExtractorError.noContent))
+        XCTAssertFalse(WebExtractor.isRetryable(error: WebExtractorError.service("Timed out fetching page after 10s")))
+        XCTAssertFalse(WebExtractor.isRetryable(error: WebExtractorError.invalidURL))
     }
 
     func testBackoffGrowsExponentially() {

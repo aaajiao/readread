@@ -4,13 +4,20 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Bindable var appState: AppState
 
+    /// Text and Markdown files (Markdown is plain text, listed so the picker always offers it).
+    static let readableTypes: [UTType] = [.plainText] + ["md", "markdown"].compactMap {
+        UTType(filenameExtension: $0, conformingTo: .plainText)
+    }
+
+    private var player: PlaybackController { appState.player }
+
     var body: some View {
         VStack(spacing: 0) {
-            if appState.hasContent {
+            if let document = appState.document {
                 // ── Reading mode ──
-                readingHeader
+                readingHeader(document)
                 Divider()
-                readingSection
+                readingSection(document)
                 Divider()
                 settingsSection
             } else {
@@ -35,21 +42,10 @@ struct ContentView: View {
         .frame(width: 380, height: 560)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .onChange(of: appState.selectedVoice) {
-            appState.saveLanguagePreferences()
-            appState.restartCurrentChunk()
-        }
-        .onChange(of: appState.speed) {
-            appState.saveLanguagePreferences()
-            appState.restartCurrentChunk()
-        }
-        .fileImporter(
-            isPresented: $appState.showFilePicker,
-            allowedContentTypes: [.plainText]
-        ) { result in
+        .fileImporter(isPresented: $appState.showFilePicker, allowedContentTypes: Self.readableTypes) { result in
             switch result {
             case .success(let url):
-                Task { await appState.openFile(url: url) }
+                appState.openFile(url: url)
             case .failure(let error):
                 appState.showError(error)
             }
@@ -71,7 +67,7 @@ struct ContentView: View {
                     .font(.title2)
                     .fontWeight(.medium)
 
-                Text("Paste a URL or open a file to start reading")
+                Text("Paste a URL, a file path or text, or open a file to start reading")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -81,14 +77,14 @@ struct ContentView: View {
 
             VStack(spacing: 12) {
                 HStack(spacing: 8) {
-                    TextField("Paste URL here...", text: $appState.urlInput)
+                    TextField("URL, file path or text…", text: $appState.urlInput)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
-                        .onSubmit { Task { await appState.fetchURL() } }
+                        .onSubmit { appState.submit() }
 
                     Button {
-                        if let str = NSPasteboard.general.string(forType: .string) {
-                            appState.urlInput = str
+                        if let text = NSPasteboard.general.string(forType: .string) {
+                            appState.urlInput = text
                         }
                     } label: {
                         Image(systemName: "doc.on.clipboard")
@@ -103,13 +99,14 @@ struct ContentView: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        Task { await appState.fetchURL() }
+                        appState.submit()
                     } label: {
                         Label("Read", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
-                    .disabled(appState.urlInput.isEmpty || appState.playbackState == .loading)
+                    .disabled(appState.urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || appState.isLoading)
 
                     Button {
                         appState.showFilePicker = true
@@ -121,9 +118,12 @@ struct ContentView: View {
 
                     Spacer()
 
-                    if appState.playbackState == .loading {
+                    if appState.isLoading {
                         ProgressView()
                             .controlSize(.small)
+                        Button("Cancel") { appState.cancelLoad() }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
                     }
                 }
             }
@@ -133,47 +133,29 @@ struct ContentView: View {
 
     // MARK: - Reading Header
 
-    private var readingHeader: some View {
+    private func readingHeader(_ document: ReadingDocument) -> some View {
         HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(appState.currentTitle)
+                Text(document.title)
                     .font(.headline)
                     .lineLimit(2)
 
-                if !appState.currentDomain.isEmpty {
-                    Text(appState.currentDomain)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .onTapGesture {
-                            var input = appState.urlInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !input.isEmpty {
-                                if !input.contains("://") {
-                                    input = "https://" + input
-                                }
-                                if let url = URL(string: input) {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }
-                        }
-                        .onHover { hovering in
-                            if hovering {
-                                NSCursor.pointingHand.push()
-                            } else {
-                                NSCursor.pop()
-                            }
-                        }
+                if !document.sourceLabel.isEmpty {
+                    if case .url(let url) = document.source {
+                        Link(document.sourceLabel, destination: url)
+                            .font(.caption)
+                    } else {
+                        Text(document.sourceLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
             Spacer()
 
             Button {
-                appState.stop()
-                appState.currentText = ""
-                appState.currentTitle = ""
-                appState.currentDomain = ""
-                appState.textChunks = []
-                appState.urlInput = ""
+                appState.closeDocument()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title3)
@@ -188,87 +170,91 @@ struct ContentView: View {
 
     // MARK: - Reading
 
-    private var readingSection: some View {
-        VStack(spacing: 8) {
-            // Scrollable text display — continuous flow
+    private func readingSection(_ document: ReadingDocument) -> some View {
+        let current = document.units.indices.contains(player.currentUnit) ? document.units[player.currentUnit] : nil
+        return VStack(spacing: 8) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(appState.textChunks.enumerated()), id: \.offset) { index, chunk in
-                            Text(chunk)
-                                .font(.system(size: 13, design: .default))
-                                .lineSpacing(5)
-                                .opacity(
-                                    index == appState.currentChunkIndex
-                                        ? 1.0
-                                        : index < appState.currentChunkIndex
-                                            ? 0.3
-                                            : 0.5
-                                )
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 4)
-                                .id(index)
-                                .animation(.easeInOut(duration: 0.4), value: appState.currentChunkIndex)
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(document.blocks.enumerated()), id: \.offset) { index, block in
+                            BlockView(
+                                block: block,
+                                highlight: current?.block == index ? current?.range : nil,
+                                isPast: (current?.block ?? 0) > index
+                            )
+                            .id(index)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if !block.units.isEmpty { player.seek(to: block.units.lowerBound) }
+                            }
                         }
                     }
                     .padding(.vertical, 8)
                 }
                 .frame(maxHeight: .infinity)
-                .mask(
-                    VStack(spacing: 0) {
-                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 12)
-                        Color.black
-                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 12)
-                    }
-                )
-                .onChange(of: appState.currentChunkIndex) { _, newIndex in
-                    withAnimation(.easeInOut(duration: 0.6)) {
-                        proxy.scrollTo(newIndex, anchor: .top)
+                .onChange(of: current?.block) { _, block in
+                    guard let block else { return }
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        proxy.scrollTo(block, anchor: .center)
                     }
                 }
             }
 
-            // Progress + controls
             VStack(spacing: 8) {
-                ProgressView(value: appState.progress)
-                    .progressViewStyle(.linear)
+                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                    ProgressView(value: player.progress)
+                        .progressViewStyle(.linear)
+                }
 
                 HStack(spacing: 24) {
-                    Button { appState.previousChunk() } label: {
+                    Button { player.previous() } label: {
                         Image(systemName: "backward.fill")
                     }
-                    .disabled(appState.currentChunkIndex == 0)
+                    .help("Previous sentence")
 
-                    Button { appState.togglePlayPause() } label: {
-                        Image(systemName: appState.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.title)
+                    Button { player.toggle() } label: {
+                        playPauseIcon
                     }
+                    .help(player.state == .playing || player.state == .buffering ? "Pause" : "Play")
 
-                    Button { appState.nextChunk() } label: {
+                    Button { player.next() } label: {
                         Image(systemName: "forward.fill")
                     }
-                    .disabled(appState.currentChunkIndex >= appState.textChunks.count - 1)
+                    .help("Next sentence")
 
                     Spacer()
 
-                    if !appState.textChunks.isEmpty {
-                        Text("\(appState.currentChunkIndex + 1)/\(appState.textChunks.count)")
+                    if player.readableCount > 0 {
+                        Text("\(player.readablePosition) / \(player.readableCount)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
 
-                    Button { appState.stop() } label: {
+                    Button { player.stop() } label: {
                         Image(systemName: "stop.fill")
                     }
+                    .help("Stop")
                 }
                 .buttonStyle(.borderless)
             }
             .padding(.horizontal)
             .padding(.bottom, 10)
+        }
+    }
+
+    @ViewBuilder
+    private var playPauseIcon: some View {
+        switch player.state {
+        case .buffering:
+            ZStack {
+                Image(systemName: "pause.circle.fill").font(.title).opacity(0.25)
+                ProgressView().controlSize(.small)
+            }
+        case .playing:
+            Image(systemName: "pause.circle.fill").font(.title)
+        default:
+            Image(systemName: "play.circle.fill").font(.title)
         }
     }
 
@@ -282,16 +268,34 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)
 
-                // Only voices of the text's language: the voice decides the
+                // Only voices of the document's language: the voice decides the
                 // pronunciation (ZH / EN-US / EN-GB).
-                Picker("Voice", selection: $appState.selectedVoice) {
-                    ForEach(appState.voicesForCurrentLanguage) { voice in
-                        Text(voice.pickerLabel)
-                            .tag(voice.id)
+                Picker("Voice", selection: Binding(
+                    get: { appState.selectedVoice.id },
+                    set: { id in if let voice = Voice.voice(id: id) { appState.selectVoice(voice) } }
+                )) {
+                    ForEach(appState.voicesForSettingsLanguage) { voice in
+                        Text(voice.pickerLabel).tag(voice.id)
                     }
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
+                .disabled(appState.usingSystemVoice)
+
+                if appState.hasDocument {
+                    Picker("Language", selection: Binding(
+                        get: { appState.languageChoice },
+                        set: { appState.setLanguageChoice($0) }
+                    )) {
+                        Text("Auto").tag(LanguageChoice.auto)
+                        Text("中文").tag(LanguageChoice.zh)
+                        Text("English").tag(LanguageChoice.en)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    .help("Read the document as detected, or all in Chinese or English")
+                }
             }
 
             HStack {
@@ -300,7 +304,8 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)
 
-                Slider(value: $appState.speed, in: 0.5...2.0, step: 0.1)
+                Slider(value: Binding(get: { appState.speed }, set: { appState.setSpeed($0) }),
+                       in: SynthesisRequest.speedRange, step: 0.1)
 
                 Text(String(format: "%.1fx", appState.speed))
                     .font(.caption)
@@ -316,7 +321,17 @@ struct ContentView: View {
 
     private var bottomBar: some View {
         HStack {
-            if appState.engineStatus == .starting {
+            if appState.usingSystemVoice {
+                Image(systemName: "person.wave.2")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("System voice")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Button("Use Kokoro") { appState.useEngineVoice() }
+                    .buttonStyle(.borderless)
+                    .font(.caption2)
+            } else if appState.engineStatus == .starting {
                 ProgressView()
                     .controlSize(.mini)
                 Text("Starting voice engine…")
@@ -364,7 +379,7 @@ struct ContentView: View {
                     errorText(message)
                 }
                 Button {
-                    appState.clearError()
+                    appState.dismissError()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.caption2)
@@ -374,6 +389,10 @@ struct ContentView: View {
             }
             HStack(spacing: 14) {
                 Spacer()
+                if appState.offersSystemVoice {
+                    Button("Use System Voice") { appState.useSystemVoice() }
+                        .help("Read with the macOS system voice until the voice engine works again")
+                }
                 Button("Show Log") { appState.showLog() }
                     .help("Open the voice engine log")
                 Button("Retry") { appState.retry() }
@@ -415,6 +434,47 @@ struct ContentView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(.orange.opacity(0.08))
+    }
+}
+
+/// One block of the reading view; the current sentence's span is highlighted.
+private struct BlockView: View, Equatable {
+    let block: ReadingBlock
+    /// The current unit's span of `block.text`, in Character offsets.
+    let highlight: Range<Int>?
+    /// Before the current sentence (dimmed).
+    let isPast: Bool
+
+    var body: some View {
+        Text(Self.attributed(block.text, highlight: highlight))
+            .font(font)
+            .lineSpacing(5)
+            .opacity(highlight != nil ? 1 : isPast ? 0.4 : 0.6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, block.kind == .listItem || block.kind == .quote ? 26 : 14)
+            .padding(.trailing, 14)
+    }
+
+    private var font: Font {
+        switch block.kind {
+        case .title: .system(size: 15, weight: .semibold)
+        case .heading: .system(size: 14, weight: .semibold)
+        case .quote: .system(size: 13).italic()
+        case .paragraph, .listItem: .system(size: 13)
+        }
+    }
+
+    static func attributed(_ text: String, highlight: Range<Int>?) -> AttributedString {
+        var string = AttributedString(text)
+        guard let highlight, !highlight.isEmpty else { return string }
+        let characters = string.characters
+        guard let start = characters.index(characters.startIndex, offsetBy: highlight.lowerBound,
+                                           limitedBy: characters.endIndex),
+              let end = characters.index(start, offsetBy: highlight.count, limitedBy: characters.endIndex) else {
+            return string
+        }
+        string[start..<end].backgroundColor = Color.accentColor.opacity(0.22)
+        return string
     }
 }
 

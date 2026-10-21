@@ -16,7 +16,10 @@ let package = Package(
         .testTarget(
             name: "ReadReadTests",
             dependencies: ["ReadRead"],
-            path: "Tests/ReadReadTests"
+            path: "Tests/ReadReadTests",
+            // Golden pages, text and encoding fixtures; the tests read them by path
+            // (#filePath), not as SwiftPM resources.
+            exclude: ["Fixtures"]
         ),
     ]
 )

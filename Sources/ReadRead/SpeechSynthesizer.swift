@@ -48,7 +48,7 @@ struct TimedSpan: Sendable, Equatable, Codable {
 }
 
 struct SynthesisResult: Sendable, Equatable {
-    /// PCM16 mono WAV, ready for AVAudioPlayer.
+    /// PCM16 mono WAV (24 kHz from every engine ReadRead has).
     let wav: Data
     let duration: Double
     let sampleRate: Int
@@ -56,6 +56,22 @@ struct SynthesisResult: Sendable, Equatable {
     let sentences: [TimedSpan]
     let tokens: [TimedSpan]
     let requestID: String?
+    /// The speed the audio was synthesized at: the requested speed when the engine
+    /// honours it (Kokoro), 1.0 when it does not (Apple speech, Qwen). The player
+    /// plays it at rate userSpeed / synthSpeed.
+    let synthSpeed: Double
+
+    init(wav: Data, duration: Double, sampleRate: Int, silent: Bool, sentences: [TimedSpan],
+         tokens: [TimedSpan], requestID: String?, synthSpeed: Double = 1.0) {
+        self.wav = wav
+        self.duration = duration
+        self.sampleRate = sampleRate
+        self.silent = silent
+        self.sentences = sentences
+        self.tokens = tokens
+        self.requestID = requestID
+        self.synthSpeed = synthSpeed
+    }
 }
 
 /// What the UI shows about the voice engine.
@@ -66,10 +82,17 @@ enum SpeechEngineStatus: Equatable {
     case failed(String)
 }
 
-/// The speech back end AppState talks to. The real one (`TTSService`) drives the
-/// Python server; tests inject fakes.
+/// The speech back end the player talks to. The real one (`TTSService`) drives the
+/// Python server, `AppleSpeechSynthesizer` is the system-voice fallback; tests inject fakes.
 @MainActor
 protocol SpeechSynthesizer: AnyObject {
+    /// Part of the synthesis cache key: audio from one engine is never reused for another.
+    var engineID: String { get }
+
+    /// False when the engine always synthesizes at speed 1.0 (`synthSpeed` 1.0) and the
+    /// player time-stretches instead: then a speed change never re-synthesizes.
+    var honoursSpeed: Bool { get }
+
     /// Synthesize one request. Cancelling the calling task cancels the request.
     func synthesize(_ request: SynthesisRequest) async throws -> SynthesisResult
 
@@ -91,4 +114,9 @@ protocol SpeechSynthesizer: AnyObject {
 
     /// The engine's log file, for "Show Log".
     var logFileURL: URL? { get }
+}
+
+extension SpeechSynthesizer {
+    var engineID: String { "kokoro" }
+    var honoursSpeed: Bool { true }
 }

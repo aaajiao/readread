@@ -1,536 +1,425 @@
+import Synchronization
 import XCTest
 
 @testable import ReadRead
 
+/// The app flow: input → DocumentLoader → PlaybackController, one load at a time, errors,
+/// preferences and the system-voice fallback (a fake loader, synthesizer and audio output).
 @MainActor
 final class AppStateTests: XCTestCase {
     private var synth: FakeSynthesizer!
-    private var audio: FakeAudioPlayer!
+    private var system: FakeSynthesizer!
+    private var output: FakeAudioOutput!
     private var store: MemoryPreferences!
-    private var tempDirectory: URL?
+    private var positions: MemoryPositions!
+    private var pages: PageFetcher!
 
     override func setUp() async throws {
         synth = FakeSynthesizer()
-        audio = FakeAudioPlayer()
+        system = FakeSynthesizer()
+        system.engineID = "apple"
+        system.honoursSpeed = false
+        system.status = .ready
+        output = FakeAudioOutput()
         store = MemoryPreferences()
+        positions = MemoryPositions()
+        pages = PageFetcher()
     }
 
-    override func tearDown() async throws {
-        if let tempDirectory { try? FileManager.default.removeItem(at: tempDirectory) }
-    }
-
-    /// Never `AppState()`: that would build the live server and use UserDefaults.standard.
+    /// Never `AppState()`: that would start the real server and audio and use UserDefaults.standard.
     private func makeState() -> AppState {
-        AppState(synthesizer: synth, audioPlayer: audio, defaults: store)
+        let pages = self.pages!
+        let system = self.system!
+        let sleeper = TestSleeper()
+        sleeper.setDefault(.immediate)
+        return AppState(
+            engine: synth, output: output, defaults: store,
+            loader: DocumentLoader(fetchPage: { try await pages.fetch($0) }, readFile: { try await WebExtractor.readFile($0) }),
+            positions: positions, nowPlaying: nil, systemVoice: { system },
+            sleep: { try await sleeper.sleep($0) })
     }
 
-    /// Three ~160-character paragraphs: three chunks at the default 200 limit.
-    private let threeParagraphs = (0..<3)
-        .map { "Paragraph \($0). " + String(repeating: "word ", count: 30) }
-        .joined(separator: "\n\n")
-
-    private func startReading(_ text: String, in state: AppState) {
-        state.currentText = text
-        state.startReading()
+    private func submit(_ input: String, in state: AppState) {
+        state.urlInput = input
+        state.submit()
     }
 
-    private func writeTempFile(_ text: String, name: String = "article.txt") throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ReadReadTests-app-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        tempDirectory = directory
-        let url = directory.appendingPathComponent(name)
-        try text.write(to: url, atomically: true, encoding: .utf8)
-        return url
-    }
+    // MARK: - Load → open → play
 
-    // MARK: - splitIntoChunks
-
-    func testSplitSkipsEmptyAndWhitespaceParagraphs() {
-        XCTAssertEqual(makeState().splitIntoChunks("Hello\n\n   \n\nWorld", maxLength: 200), ["Hello\n\nWorld"])
-    }
-
-    func testSplitMergesShortParagraphsUnderMaxLength() {
-        XCTAssertEqual(makeState().splitIntoChunks("abc\n\ndef", maxLength: 20), ["abc\n\ndef"])
-    }
-
-    func testSplitStartsNewChunkWhenAddingExceedsMaxLength() {
-        XCTAssertEqual(makeState().splitIntoChunks("abcdefghij\n\nklmnopqrst", maxLength: 15), ["abcdefghij", "klmnopqrst"])
-    }
-
-    func testSplitThreeParagraphsPartialMerge() {
-        // "aaa\n\nbbb" is 8 characters; adding 14 more exceeds 20.
-        XCTAssertEqual(makeState().splitIntoChunks("aaa\n\nbbb\n\ncccccccccccccc", maxLength: 20),
-                       ["aaa\n\nbbb", "cccccccccccccc"])
-    }
-
-    func testSplitFallbackReturnsOriginalTextWhenResultWouldBeEmpty() {
-        let text = "   \n\n\t\n\n  "
-        XCTAssertEqual(makeState().splitIntoChunks(text, maxLength: 200), [text])
-    }
-
-    func testSplitPlainStringWithNoDoubleNewline() {
-        let text = "Just a plain sentence with no double newline."
-        XCTAssertEqual(makeState().splitIntoChunks(text, maxLength: 200), [text])
-    }
-
-    func testSplitBoundaryExactlyAtMaxLength() {
-        XCTAssertEqual(makeState().splitIntoChunks("aaaa\n\nbbbb\n\ncccc", maxLength: 10), ["aaaa\n\nbbbb", "cccc"])
-    }
-
-    // MARK: - Request size cap
-
-    func testCapLengthLeavesShortTextAlone() {
-        XCTAssertEqual(AppState.capLength("short", limit: 10), ["short"])
-    }
-
-    func testCapLengthSplitsAtSentenceEndsWithoutLosingText() {
-        let text = String(repeating: "This is one sentence of moderate length. ", count: 10)
-        let pieces = AppState.capLength(text, limit: 100)
-        XCTAssertGreaterThan(pieces.count, 1)
-        XCTAssertEqual(pieces.joined(), text)
-        XCTAssertTrue(pieces.allSatisfy { $0.unicodeScalars.count <= 100 })
-        XCTAssertTrue(pieces.dropLast().allSatisfy { $0.trimmingCharacters(in: .whitespaces).hasSuffix(".") }, "\(pieces)")
-    }
-
-    func testCapLengthCutsAnOverlongSentenceAtWhitespace() {
-        let text = String(repeating: "word ", count: 100)
-        let pieces = AppState.capLength(text, limit: 64)
-        XCTAssertEqual(pieces.joined(), text)
-        XCTAssertTrue(pieces.allSatisfy { $0.unicodeScalars.count <= 64 })
-        XCTAssertTrue(pieces.dropLast().allSatisfy { $0.hasSuffix(" ") }, "never inside a word: \(pieces)")
-    }
-
-    func testCapLengthHardCutsChineseWithoutPunctuation() {
-        let text = String(repeating: "汉", count: 250)
-        let pieces = AppState.capLength(text, limit: 100)
-        XCTAssertEqual(pieces.map(\.count), [100, 100, 50])
-        XCTAssertEqual(pieces.joined(), text)
-    }
-
-    func testChunksNeverExceedTheRequestCap() {
-        let long = String(repeating: "这是一个很长的句子没有任何标点符号", count: 300)  // 5100 characters
-        let chunks = makeState().splitIntoChunks(long)
-        XCTAssertEqual(chunks.count, 2)
-        XCTAssertTrue(chunks.allSatisfy { $0.unicodeScalars.count <= AppState.maxRequestCharacters })
-        XCTAssertEqual(chunks.joined(), long)
-    }
-
-    // MARK: - Language detection (interim: zh/en only)
-
-    func testDetectionIsConstrainedToChineseAndEnglish() {
-        XCTAssertEqual(AppState.languageConstraints, [.simplifiedChinese, .traditionalChinese, .english])
-    }
-
-    func testDetectsEnglish() {
-        let english = "The quick brown fox jumps over the lazy dog. This is a clearly English paragraph."
-        XCTAssertEqual(makeState().detectLanguage(english), .en)
-    }
-
-    func testDetectsSimplifiedAndTraditionalChinese() {
+    func testPastedTextIsReadAtOnce() async throws {
         let state = makeState()
-        XCTAssertEqual(state.detectLanguage("这是一段中文文本，用于测试语言检测功能。中文是世界上使用人数最多的语言之一。"), .zh)
-        XCTAssertEqual(state.detectLanguage("這是一段繁體中文文本，用於測試語言檢測功能。"), .zh)
-        XCTAssertEqual(state.detectLanguage("苹果公司今天发布了新的 iPhone 和 MacBook Pro，售价与去年持平。"), .zh)
+        submit("第一句话在这里。第二句话也在这里。", in: state)
+        XCTAssertTrue(state.isLoading)
+        await waitUntil { state.player.state == .playing }
+        XCTAssertFalse(state.isLoading)
+        let document = try XCTUnwrap(state.document)
+        XCTAssertEqual(document.source, .text)
+        XCTAssertEqual(document.units.map(\.speakText), ["第一句话在这里。", "第二句话也在这里。"])
+        XCTAssertEqual(output.playedIDs, [0])
+        XCTAssertEqual(synth.requests.first?.text, "第一句话在这里。")
+        XCTAssertEqual(synth.requests.first?.voiceID, "zf_001")
+        XCTAssertNil(state.errorMessage)
+        XCTAssertTrue(pages.calls.isEmpty, "text is never sent anywhere")
     }
 
-    func testDroppedLanguagesMapOntoZhOrEn() {
+    func testAURLIsFetchedAndItsPageRead() async throws {
+        pages.set(WebPage(title: "A Post", markdown: "# A Post\n\nFirst sentence here. Second one.", domain: "example.com"),
+                  for: "https://example.com/post")
         let state = makeState()
-        XCTAssertEqual(state.detectLanguage("これは日本語のテキストです。自然言語処理のテストに使用されています。"), .zh)
-        XCTAssertEqual(state.detectLanguage("Este es un texto en español para probar la detección de idioma."), .en)
-        XCTAssertEqual(state.detectLanguage("Das ist ein deutscher Text, der die Spracherkennung testen soll."), .en)
+        submit("example.com/post", in: state)
+        await waitUntil { state.player.state == .playing }
+        XCTAssertEqual(pages.calls.map(\.absoluteString), ["https://example.com/post"])
+        let document = try XCTUnwrap(state.document)
+        XCTAssertEqual(document.title, "A Post")
+        XCTAssertEqual(document.sourceLabel, "example.com")
+        XCTAssertEqual(document.units.first?.kind, .title, "the title is read first, once")
+        XCTAssertEqual(document.units.map(\.speakText), ["A Post.", "First sentence here.", "Second one."])
+        XCTAssertEqual(synth.requests.first?.text, "A Post.")
+        XCTAssertEqual(synth.requests.first?.voiceID, "af_heart")
+        XCTAssertEqual(synth.prewarmed, [.zh], "the last language's model loads during the fetch")
     }
 
-    func testUndetectableTextFallsBackToEnglish() {
-        XCTAssertEqual(makeState().detectLanguage(""), .en)
-        XCTAssertEqual(makeState().detectLanguage("12345"), .en)
+    func testAFilePathIsReadAsAFile() async throws {
+        let url = try makeTemporaryDirectory().appending(path: "notes.txt")
+        try "Hello there. This is a file.".write(to: url, atomically: true, encoding: .utf8)
+        let state = makeState()
+        submit(url.path, in: state)
+        await waitUntil { state.player.state == .playing }
+        let document = try XCTUnwrap(state.document)
+        guard case .file(let opened) = document.source else { return XCTFail("\(document.source)") }
+        XCTAssertEqual(opened.standardizedFileURL.path, url.standardizedFileURL.path)
+        XCTAssertEqual(document.title, "notes")
+        XCTAssertEqual(document.sourceLabel, "notes.txt")
+        XCTAssertEqual(document.units.map(\.speakText), ["Hello there.", "This is a file."], "a file name is not read")
+        XCTAssertTrue(pages.calls.isEmpty)
+    }
+
+    func testANewLoadCancelsTheOneRunning() async throws {
+        let slow = "https://slow.example/a"
+        pages.hold(slow)
+        pages.set(WebPage(title: "Slow", markdown: "Slow page text.", domain: "slow.example"), for: slow)
+        pages.set(WebPage(title: "Fast", markdown: "Fast page text.", domain: "fast.example"), for: "https://fast.example/b")
+        let state = makeState()
+        state.load(.url(try XCTUnwrap(URL(string: slow))))
+        await waitUntil { self.pages.calls.count == 1 }
+        state.load(.url(try XCTUnwrap(URL(string: "https://fast.example/b"))))
+        await waitUntil { state.document != nil }
+        XCTAssertEqual(state.document?.title, "Fast")
+        await waitUntil { self.pages.cancelled.count == 1 }
+        pages.release(slow)
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(state.document?.title, "Fast", "the cancelled load never opens")
+        XCTAssertNil(state.errorMessage)
+        XCTAssertFalse(state.isLoading)
+    }
+
+    func testReturnIsIgnoredWhileLoadingAndCancelStopsTheLoad() async throws {
+        let slow = "https://slow.example/a"
+        pages.hold(slow)
+        pages.set(WebPage(title: "Slow", markdown: "Slow page text.", domain: "slow.example"), for: slow)
+        let state = makeState()
+        submit(slow, in: state)
+        await waitUntil { self.pages.calls.count == 1 }
+        submit("https://other.example/b", in: state)
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(pages.calls.count, 1, "Return is ignored while loading")
+        XCTAssertTrue(state.isLoading)
+
+        state.cancelLoad()
+        XCTAssertFalse(state.isLoading)
+        await waitUntil { self.pages.cancelled.count == 1 }
+        pages.release(slow)
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertNil(state.document)
+        XCTAssertNil(state.errorMessage, "a cancelled load is not an error")
+        XCTAssertTrue(synth.requests.isEmpty)
+    }
+
+    func testAnEmptyDocumentIsAnError() async {
+        let state = makeState()
+        submit("```\nlet x = 1\n```", in: state)
+        await waitUntil { !state.isLoading }
+        XCTAssertNil(state.document)
+        XCTAssertEqual(state.errorMessage, DocumentError.nothingToRead.errorDescription)
+        XCTAssertTrue(state.errorMessage?.contains("没有可读的内容") == true)
+        XCTAssertFalse(state.errorNeedsSetup)
+        XCTAssertFalse(state.offersSystemVoice)
+        XCTAssertTrue(synth.requests.isEmpty)
+    }
+
+    func testEmptyInputDoesNothing() {
+        let state = makeState()
+        submit("   \n ", in: state)
+        XCTAssertFalse(state.isLoading)
+        XCTAssertTrue(synth.prewarmed.isEmpty)
+    }
+
+    func testRetryAfterAFailedFetchLoadsAgain() async throws {
+        let url = "https://example.com/flaky"
+        pages.set(WebPage(title: "Flaky", markdown: "It works now.", domain: "example.com"), for: url)
+        pages.fail(url, .timedOut)
+        let state = makeState()
+        submit(url, in: state)
+        await waitUntil { state.errorMessage != nil }
+        XCTAssertNil(state.document)
+        XCTAssertFalse(state.offersSystemVoice)
+        state.retry()
+        XCTAssertNil(state.errorMessage)
+        await waitUntil { state.player.state == .playing }
+        XCTAssertEqual(pages.calls.count, 2)
+        XCTAssertEqual(state.document?.title, "Flaky")
     }
 
     // MARK: - Preferences
+
+    func testFreshInstallStartsWithTheChineseDefault() {
+        let state = makeState()
+        XCTAssertEqual(state.settingsLanguage, .zh)
+        XCTAssertEqual(state.selectedVoice.id, "zf_001")
+        XCTAssertEqual(state.speed, 1.0)
+        XCTAssertEqual(state.voicesForSettingsLanguage.map(\.language), Array(repeating: .zh, count: 4))
+        XCTAssertEqual(state.languageChoice, .auto)
+    }
 
     func testInitMigratesOldPreferencesAndRestoresTheLastLanguage() {
         store.set("bm_george", forKey: "voice_en-us")
         store.set(1.4, forKey: "speed_en-us")
         store.set("jf_alpha", forKey: "voice_ja")
         store.set("en", forKey: "last_language")
-
         let state = makeState()
-
-        XCTAssertEqual(state.selectedLanguage, .en)
-        XCTAssertEqual(state.selectedVoice, "bm_george")
+        XCTAssertEqual(state.settingsLanguage, .en)
+        XCTAssertEqual(state.selectedVoice.id, "bm_george")
         XCTAssertEqual(state.speed, 1.4)
+        XCTAssertEqual(state.voicesForSettingsLanguage.count, 27)
         XCTAssertNil(store.object(forKey: "voice_ja"))
         XCTAssertNil(store.object(forKey: "voice_en-us"))
     }
 
-    func testFreshInstallStartsWithTheChineseDefault() {
-        let state = makeState()
-        XCTAssertEqual(state.selectedLanguage, .zh)
-        XCTAssertEqual(state.selectedVoice, "zf_001")
-        XCTAssertEqual(state.speed, 1.0)
-        XCTAssertEqual(state.voicesForCurrentLanguage.map(\.language), Array(repeating: .zh, count: 4))
-    }
-
-    func testPickerOffersOnlyTheCurrentLanguage() {
-        let state = makeState()
-        state.applyLanguagePreferences(for: .en)
-        XCTAssertEqual(state.voicesForCurrentLanguage.count, 27)
-        XCTAssertTrue(state.voicesForCurrentLanguage.allSatisfy { $0.language == .en })
-    }
-
-    func testSaveLanguagePreferencesPersistsValues() {
-        let state = makeState()
-        state.applyLanguagePreferences(for: .en)
-        state.selectedVoice = "bf_emma"
-        state.speed = 1.5
-        state.currentText = "x"  // hasContent
-
-        state.saveLanguagePreferences()
-
-        XCTAssertEqual(store.string(forKey: "voice_en"), "bf_emma")
-        XCTAssertEqual(store.object(forKey: "speed_en") as? Double, 1.5)
-    }
-
-    func testSaveLanguagePreferencesIsNoOpWithoutContent() {
-        let state = makeState()
-        state.selectedVoice = "zf_032"
-        state.saveLanguagePreferences()
-        XCTAssertNil(store.object(forKey: "voice_zh"))
-    }
-
-    func testApplyLanguagePreferencesRestoresSavedValuesOrDefaults() {
-        store.set("zm_055", forKey: "voice_zh")
-        store.set(0.8, forKey: "speed_zh")
-        let state = makeState()
-        state.applyLanguagePreferences(for: .zh)
-        XCTAssertEqual(state.selectedVoice, "zm_055")
-        XCTAssertEqual(state.speed, 0.8)
-        state.applyLanguagePreferences(for: .en)
-        XCTAssertEqual(state.selectedVoice, "af_heart")
-        XCTAssertEqual(state.speed, 1.0)
-    }
-
-    // MARK: - Opening content
-
-    func testOpenFileDetectsTheLanguageAndUsesItsSavedVoice() async throws {
+    func testTheDocumentLanguagePicksItsVoiceAndSpeed() async throws {
         store.set("bf_emma", forKey: "voice_en")
         store.set(1.3, forKey: "speed_en")
+        store.set("zm_009", forKey: "voice_zh")
+        store.set(0.8, forKey: "speed_zh")
         let state = makeState()
-        let url = try writeTempFile("Hello there. This is an English article about the weather in London.")
-
-        await state.openFile(url: url)
-        await waitUntil { state.playbackState == .idle && !synth.requests.isEmpty }
-
-        XCTAssertEqual(synth.prewarmed, [.zh], "prewarm the last language while the content loads")
-        XCTAssertEqual(state.selectedLanguage, .en)
+        XCTAssertEqual(state.speed, 0.8, "before a document: the last language's (zh) speed")
+        submit("Hello there. This is an English article about the weather in London.", in: state)
+        await waitUntil { state.player.state == .playing }
+        XCTAssertEqual(state.settingsLanguage, .en)
         XCTAssertEqual(store.string(forKey: "last_language"), "en")
         let request = try XCTUnwrap(synth.requests.first)
         XCTAssertEqual(request.voiceID, "bf_emma")
         XCTAssertEqual(request.language, .en)
         XCTAssertEqual(request.speed, 1.3)
-        XCTAssertEqual(audio.played.count, 1)
-        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(output.userSpeed, 1.3)
+
+        state.closeDocument()
+        XCTAssertEqual(state.settingsLanguage, .en, "the last document's language")
+        XCTAssertEqual(state.speed, 1.3)
+        let before = synth.requests.count
+        submit("这是一篇中文文章。今天天气很好，我们去公园散步吧。", in: state)
+        await waitUntil { state.player.state == .playing && state.document?.detectedLanguage == .zh }
+        XCTAssertEqual(synth.prewarmed, [.zh, .en])
+        let chinese = synth.requests.dropFirst(before)
+        XCTAssertFalse(chinese.isEmpty)
+        XCTAssertTrue(chinese.allSatisfy { $0.voiceID == "zm_009" && $0.speed == 0.8 })
     }
 
-    func testOpenFileWithChineseTextPicksTheChineseVoice() async throws {
-        store.set("en", forKey: "last_language")
+    func testChoosingAVoiceSavesItAndRestartsTheSentence() async throws {
         let state = makeState()
-        let url = try writeTempFile("这是一篇中文文章。今天天气很好，我们去公园散步吧。")
-
-        await state.openFile(url: url)
-        await waitUntil { state.playbackState == .idle && !synth.requests.isEmpty }
-
-        XCTAssertEqual(synth.prewarmed, [.en])
-        XCTAssertEqual(synth.requests.first?.voiceID, "zf_001")
-        XCTAssertEqual(synth.requests.first?.language, .zh)
+        submit("第一句话在这里。第二句话也在这里。", in: state)
+        await waitUntil { state.player.state == .playing && self.synth.requests.count == 2 }
+        let voice = try XCTUnwrap(Voice.voice(id: "zm_055"))
+        state.selectVoice(voice)
+        XCTAssertEqual(store.string(forKey: "voice_zh"), "zm_055")
+        XCTAssertEqual(state.selectedVoice, voice)
+        await waitUntil { state.player.state == .playing && self.output.played.count == 2 }
+        XCTAssertEqual(output.playedIDs, [0, 0], "the sentence starts again with the new voice")
+        XCTAssertEqual(synth.requests[2].voiceID, "zm_055")
+        XCTAssertEqual(synth.requests[2].text, "第一句话在这里。")
     }
 
-    func testOpenFileFailureShowsTheErrorAndReturnsToIdle() async {
+    func testTheSpeedIsSavedForTheDocumentLanguage() async throws {
         let state = makeState()
-        await state.openFile(url: URL(fileURLWithPath: "/nonexistent/readread-test.txt"))
-        XCTAssertEqual(state.playbackState, .idle)
-        XCTAssertNotNil(state.errorMessage)
-        XCTAssertFalse(state.errorNeedsSetup)
-        XCTAssertEqual(synth.prewarmed, [.zh])
-        XCTAssertTrue(synth.requests.isEmpty)
+        submit("Hello there. This is an English text.", in: state)
+        await waitUntil { state.player.state == .playing }
+        state.setSpeed(1.5)
+        XCTAssertEqual(output.userSpeed, 1.5, "the rate changes at once")
+        XCTAssertEqual(store.object(forKey: "speed_en") as? Double, 1.5)
+        XCTAssertNil(store.object(forKey: "speed_zh"))
+        XCTAssertEqual(state.speed, 1.5)
     }
 
-    func testEmptyURLDoesNothing() async {
+    func testTheLanguageChoiceIsPerDocumentAndNotSaved() async throws {
         let state = makeState()
-        state.urlInput = "   "
-        await state.fetchURL()
-        XCTAssertEqual(state.playbackState, .idle)
-        XCTAssertTrue(synth.prewarmed.isEmpty)
+        let text = "这是一篇中文文章。今天天气很好。"
+        submit(text, in: state)
+        await waitUntil { state.player.state == .playing }
+        state.setLanguageChoice(.en)
+        XCTAssertEqual(state.languageChoice, .en)
+        XCTAssertEqual(state.settingsLanguage, .en)
+        XCTAssertEqual(state.voicesForSettingsLanguage.first?.language, .en)
+        await waitUntil { self.synth.requests.contains { $0.voiceID == "af_heart" && $0.text == "这是一篇中文文章。" } }
+        XCTAssertEqual(Set(store.values.keys), ["last_language"], "the choice is not a preference")
+
+        state.closeDocument()
+        submit(text, in: state)
+        await waitUntil { state.document != nil }
+        XCTAssertEqual(state.languageChoice, .en, "the same document keeps its choice")
+        state.closeDocument()
+        submit("另一篇文章。", in: state)
+        await waitUntil { state.document != nil }
+        XCTAssertEqual(state.languageChoice, .auto)
     }
 
-    // MARK: - Reading
+    // MARK: - Errors and the system voice
 
-    func testReadsEveryChunkInOrderAndPrefetches() async {
+    func testTheSystemVoiceTakesOverWhenTheEngineCannotRun() async throws {
+        synth.failures[0] = TTSError.serverFatal("model file missing: voices-v1.0.bin")
         let state = makeState()
-        startReading(threeParagraphs, in: state)
-        XCTAssertEqual(state.textChunks.count, 3)
-        await waitUntil { state.playbackState == .idle }
-        XCTAssertEqual(synth.requests.map(\.text), state.textChunks)
-        XCTAssertEqual(audio.played.count, 3)
-        XCTAssertEqual(synth.playbackActiveHistory.first, true)
-        XCTAssertEqual(synth.playbackActiveHistory.last, false)
-    }
-
-    // MARK: - Errors end in a consistent, recoverable state
-
-    func testSynthesisErrorPausesOnTheFailedChunkWithTheRealMessage() async {
-        synth.failures[1] = TTSError.serverFatal("model file missing: voices-v1.0.bin")
-        let state = makeState()
-        startReading(threeParagraphs, in: state)
+        submit("第一句话在这里。第二句话也在这里。", in: state)
         await waitUntil { state.errorMessage != nil }
-
         XCTAssertEqual(state.errorMessage, "TTS server failed to start: model file missing: voices-v1.0.bin")
-        XCTAssertEqual(state.playbackState, .paused)
-        XCTAssertEqual(state.currentChunkIndex, 1)
-        XCTAssertTrue(state.needsResynthesis)
-        XCTAssertTrue(state.errorIsServerFailure)
+        XCTAssertTrue(state.offersSystemVoice)
         XCTAssertFalse(state.errorNeedsSetup)
-        XCTAssertEqual(audio.played.count, 1)
-        XCTAssertEqual(synth.playbackActiveHistory.last, false, "paused: idle shutdown may count again")
-    }
 
-    func testPlayAfterAnErrorSynthesizesTheFailedChunkAgain() async {
-        synth.failures[1] = TTSError.connectionFailed("refused")
-        let state = makeState()
-        startReading(threeParagraphs, in: state)
-        await waitUntil { state.errorMessage != nil }
-
-        state.togglePlayPause()
+        state.useSystemVoice()
+        XCTAssertTrue(state.usingSystemVoice)
         XCTAssertNil(state.errorMessage)
-        XCTAssertEqual(state.playbackState, .playing)
-        await waitUntil { state.playbackState == .idle }
+        XCTAssertFalse(state.offersSystemVoice)
+        await waitUntil { state.player.state == .playing }
+        XCTAssertEqual(system.requests.first?.text, "第一句话在这里。", "from the failed sentence on")
+        XCTAssertEqual(output.played.last?.synthSpeed, 1.0)
+        XCTAssertTrue(state.player.synthesizer === system)
+        XCTAssertEqual(state.engineStatus, .ready)
 
-        let chunks = state.textChunks
-        XCTAssertEqual(synth.requests.map(\.text), [chunks[0], chunks[1], chunks[1], chunks[2]])
-        XCTAssertEqual(audio.played.count, 3)
-        XCTAssertFalse(state.needsResynthesis)
+        state.setSpeed(1.5)
+        XCTAssertEqual(output.userSpeed, 1.5, "time-stretched: the system voice has no speed")
+        state.useEngineVoice()
+        XCTAssertFalse(state.usingSystemVoice)
+        XCTAssertTrue(state.player.synthesizer === synth)
     }
 
     func testMissingResourcesShowTheSetupHint() async {
         synth.failures[0] = TTSError.resourcesMissing(["Python runtime (looked for /rr/env/bin/python3)"])
         let state = makeState()
-        startReading("Some text.", in: state)
+        submit("Some text.", in: state)
         await waitUntil { state.errorMessage != nil }
         XCTAssertTrue(state.errorNeedsSetup)
+        XCTAssertTrue(state.offersSystemVoice)
         XCTAssertTrue(state.errorMessage?.contains("/rr/env/bin/python3") == true)
     }
 
-    func testAudioFailureIsReportedAndRecoverable() async {
-        audio.error = AudioPlaybackError.couldNotStart
+    /// "No log yet" (the server never started) goes under the error without replacing it: the
+    /// setup hint, the system-voice offer and Retry stay the engine's.
+    func testShowLogWithoutALogKeepsTheEngineError() async {
+        synth.failures[0] = TTSError.resourcesMissing(["Python runtime (looked for /rr/env/bin/python3)"])
+        pages.set(WebPage(title: nil, markdown: "First sentence here.", domain: "example.com"), for: "https://example.com/post")
         let state = makeState()
-        startReading("Some text.", in: state)
+        submit("https://example.com/post", in: state)
         await waitUntil { state.errorMessage != nil }
-        XCTAssertEqual(state.errorMessage, "Audio playback could not start.")
-        XCTAssertEqual(state.playbackState, .paused)
-        XCTAssertFalse(state.errorIsServerFailure)
-
-        audio.error = nil
-        state.togglePlayPause()
-        await waitUntil { state.playbackState == .idle }
-        XCTAssertEqual(audio.played.count, 1)
-    }
-
-    func testStopDuringSynthesisCancelsTheRequestWithoutAnError() async {
-        synth.hangUntilCancelled()
-        let state = makeState()
-        startReading(threeParagraphs, in: state)
-        await waitUntil { !synth.requests.isEmpty }
-
-        state.stop()
-
-        await waitUntil { synth.cancelledCount == 1 }
-        try? await Task.sleep(for: .milliseconds(20))
-        XCTAssertNil(state.errorMessage)
-        XCTAssertEqual(state.playbackState, .idle)
-        XCTAssertEqual(state.currentChunkIndex, 0)
-        XCTAssertTrue(audio.played.isEmpty)
-    }
-
-    func testSkippingCancelsTheInFlightRequest() async {
-        synth.hangUntilCancelled()
-        let state = makeState()
-        startReading(threeParagraphs, in: state)
-        await waitUntil { synth.requests.count == 1 }
-
-        state.nextChunk()
-
-        await waitUntil { synth.cancelledCount == 1 && synth.requests.count == 2 }
-        XCTAssertEqual(synth.requests.last?.text, state.textChunks[1])
-        XCTAssertNil(state.errorMessage)
-        state.stop()
-    }
-
-    // MARK: - Retry
-
-    func testRetryRestartsTheServerAfterAServerFailureAndContinues() async {
-        synth.failures[0] = TTSError.crashed(status: -9, detail: "")
-        let state = makeState()
-        startReading(threeParagraphs, in: state)
-        await waitUntil { state.errorMessage != nil }
-
-        state.retry()
-        XCTAssertNil(state.errorMessage)
-        await waitUntil { state.playbackState == .idle && synth.requests.count == 4 }
-        XCTAssertEqual(synth.restartCount, 1)
-        XCTAssertEqual(audio.played.count, 3)
-    }
-
-    func testRetryAfterARequestErrorDoesNotRestartTheServer() async {
-        synth.failures[0] = TTSError.server(status: 400, code: "bad_request", message: "text is empty")
-        let state = makeState()
-        startReading("Some text.", in: state)
-        await waitUntil { state.errorMessage != nil }
-        XCTAssertEqual(state.errorMessage, "TTS error (bad_request): text is empty")
-
-        state.retry()
-        await waitUntil { state.playbackState == .idle && synth.requests.count == 2 }
-        XCTAssertEqual(synth.restartCount, 0)
-    }
-
-    func testRetryShowsTheRestartFailure() async {
-        synth.failures[0] = TTSError.gaveUp(lastError: "boom", logPath: "/logs/tts-server.log")
-        synth.restartError = TTSError.serverFatal("still broken")
-        let state = makeState()
-        startReading("Some text.", in: state)
-        await waitUntil { state.errorMessage != nil }
-
-        state.retry()
-        await waitUntil { state.errorMessage != nil }
-        XCTAssertEqual(state.errorMessage, "TTS server failed to start: still broken")
-        XCTAssertEqual(synth.restartCount, 1)
-        XCTAssertEqual(synth.requests.count, 1, "no synthesis until the server is back")
-    }
-
-    func testStopDuringRetryPlaysNothing() async {
-        synth.failures[0] = TTSError.crashed(status: -9, detail: "")
-        let state = makeState()
-        startReading(threeParagraphs, in: state)
-        await waitUntil { state.errorMessage != nil }
-
-        synth.holdRestart = true
-        state.retry()
-        await waitUntil { synth.restartsWaiting == 1 }
-        state.stop()
-        synth.releaseRestart()
-        try? await Task.sleep(for: .milliseconds(50))
-
-        XCTAssertEqual(state.playbackState, .idle)
-        XCTAssertEqual(synth.requests.count, 1, "nothing is synthesized after Stop")
-        XCTAssertTrue(audio.played.isEmpty)
-        XCTAssertNil(state.retryTask)
-    }
-
-    func testPlayDuringRetryReadsTheFailedChunkOnlyOnce() async {
-        synth.failures[0] = TTSError.crashed(status: -9, detail: "")
-        let state = makeState()
-        startReading(threeParagraphs, in: state)
-        await waitUntil { state.errorMessage != nil }
-
-        synth.holdRestart = true
-        state.retry()
-        await waitUntil { synth.restartsWaiting == 1 }
-        state.togglePlayPause()  // Play while the server restarts
-        synth.releaseRestart()
-        await waitUntil { state.playbackState == .idle && audio.played.count == 3 }
-        try? await Task.sleep(for: .milliseconds(50))
-
-        let chunks = state.textChunks
-        XCTAssertEqual(synth.requests.map(\.text), [chunks[0], chunks[0], chunks[1], chunks[2]])
-        XCTAssertEqual(audio.played.count, 3)
-    }
-
-    func testRetryDoesNotResumeWhenTheStateMovedOn() async {
-        synth.failures[0] = TTSError.crashed(status: -9, detail: "")
-        let state = makeState()
-        startReading("Some text.", in: state)
-        await waitUntil { state.errorMessage != nil }
-
-        synth.holdRestart = true
-        state.retry()
-        await waitUntil { synth.restartsWaiting == 1 }
-        state.retry()  // a second Retry (the error is cleared, so no restart) resumes at once ...
-        await waitUntil { state.playbackState == .idle && synth.requests.count == 2 }
-        synth.releaseRestart()  // ... and the first, replaced, must not resume again
-        try? await Task.sleep(for: .milliseconds(50))
-        XCTAssertEqual(synth.requests.count, 2)
-        XCTAssertEqual(audio.played.count, 1)
-        XCTAssertEqual(synth.restartCount, 1)
-    }
-
-    func testShowLogWithoutALogFileSaysWhereItWouldBe() {
-        synth.logFileURL = URL(fileURLWithPath: "/nonexistent/readread/tts-server.log")
-        let state = makeState()
+        let error = state.errorMessage
         state.showLog()
-        XCTAssertEqual(state.errorMessage, "No log yet at /nonexistent/readread/tts-server.log")
+        XCTAssertEqual(state.errorMessage, (error ?? "") + "\nNo log yet at /logs/tts-server.log")
+        XCTAssertTrue(state.errorNeedsSetup)
+        XCTAssertTrue(state.offersSystemVoice)
+        state.retry()
+        await waitUntil { state.player.state == .playing }
+        XCTAssertEqual(synth.restartCount, 1, "the engine is restarted")
+        XCTAssertEqual(pages.calls.count, 1, "the page is not fetched again")
+        XCTAssertNil(state.logNotice)
     }
 
-    func testShutdownStopsAudioAndTheEngine() {
+    func testRetryRestartsTheServerAndContinuesAtTheFailedSentence() async {
+        synth.failures[0] = TTSError.crashed(status: -9, detail: "")
         let state = makeState()
+        submit("第一句。第二句。", in: state)
+        await waitUntil { state.errorMessage != nil }
+        state.retry()
+        XCTAssertNil(state.errorMessage)
+        await waitUntil { state.player.state == .playing }
+        XCTAssertEqual(synth.restartCount, 1)
+        XCTAssertEqual(output.playedIDs, [0])
+    }
+
+    func testDismissingHidesTheFailureUntilTheNextOne() async {
+        synth.failures[0] = TTSError.server(status: 400, code: "bad_request", message: "text is empty")
+        synth.failures[1] = TTSError.server(status: 400, code: "bad_request", message: "again")
+        let state = makeState()
+        submit("第一句。第二句。", in: state)
+        await waitUntil { state.errorMessage != nil }
+        XCTAssertFalse(state.offersSystemVoice, "a request error is not the engine failing")
+        state.dismissError()
+        XCTAssertNil(state.errorMessage)
+        XCTAssertTrue(state.player.state.isFailed, "Play still reads the failed sentence again")
+        state.player.play()
+        await waitUntil { state.errorMessage != nil }
+        XCTAssertEqual(state.errorMessage, "TTS error (bad_request): again")
+    }
+
+    // MARK: - Positions and shutdown
+
+    func testClosingSavesThePositionAndReopeningResumesThere() async throws {
+        let text = "第一句。第二句。第三句。"
+        let state = makeState()
+        submit(text, in: state)
+        await waitUntil { state.player.state == .playing && self.synth.requests.count == 3 }
+        output.finish()
+        await waitUntil { state.player.currentUnit == 1 && state.player.state == .playing }
+        let key = try XCTUnwrap(state.document?.positionKey)
+        state.closeDocument()
+        XCTAssertNil(state.document)
+        XCTAssertEqual(state.urlInput, "")
+        XCTAssertNil(output.current)
+        XCTAssertEqual(positions.positions[key]?.unit, 1)
+
+        submit(text, in: state)
+        await waitUntil { state.player.state == .playing }
+        XCTAssertEqual(state.player.currentUnit, 1)
+    }
+
+    func testShutdownSavesThePositionAndStopsTheEngine() async throws {
+        let state = makeState()
+        submit("第一句。第二句。", in: state)
+        await waitUntil { state.player.state == .playing }
+        let key = try XCTUnwrap(state.document?.positionKey)
         state.shutdown()
         XCTAssertEqual(synth.shutdownCount, 1)
-        XCTAssertGreaterThanOrEqual(audio.stopCount, 1)
+        XCTAssertEqual(state.player.state, .idle)
+        XCTAssertEqual(positions.positions[key]?.unit, 0)
+    }
+}
+
+/// `DocumentLoader.fetchPage` for the tests: pages by URL, held until released, failing once.
+final class PageFetcher: Sendable {
+    private struct State {
+        var pages: [String: WebPage] = [:]
+        var held: Set<String> = []
+        var failures: [String: URLError.Code] = [:]
+        var calls: [URL] = []
+        var cancelled: [URL] = []
     }
 
-    // MARK: - Computed properties and guards
+    private let state = Mutex(State())
 
-    func testProgress() {
-        let state = makeState()
-        XCTAssertEqual(state.progress, 0.0, accuracy: 0.001)
-        state.textChunks = ["a", "b", "c", "d"]
-        state.currentChunkIndex = 2
-        XCTAssertEqual(state.progress, 0.5, accuracy: 0.001)
-    }
+    var calls: [URL] { state.withLock { $0.calls } }
+    var cancelled: [URL] { state.withLock { $0.cancelled } }
 
-    func testPlaybackStateFlagsAndEngineActivity() {
-        let state = makeState()
-        state.playbackState = .playing
-        XCTAssertTrue(state.isPlaying)
-        XCTAssertFalse(state.isPaused)
-        state.playbackState = .paused
-        XCTAssertFalse(state.isPlaying)
-        XCTAssertTrue(state.isPaused)
-        state.playbackState = .idle
-        XCTAssertFalse(state.isPlaying || state.isPaused)
-        XCTAssertEqual(synth.playbackActiveHistory, [true, false, false])
-    }
+    func set(_ page: WebPage, for url: String) { state.withLock { $0.pages[url] = page } }
+    func hold(_ url: String) { _ = state.withLock { $0.held.insert(url) } }
+    func release(_ url: String) { _ = state.withLock { $0.held.remove(url) } }
+    func fail(_ url: String, _ code: URLError.Code) { state.withLock { $0.failures[url] = code } }
 
-    func testHasContentReflectsCurrentText() {
-        let state = makeState()
-        XCTAssertFalse(state.hasContent)
-        state.currentText = "something"
-        XCTAssertTrue(state.hasContent)
-    }
-
-    func testNextChunkIsNoOpAtLastChunk() {
-        let state = makeState()
-        state.textChunks = ["a", "b", "c"]
-        state.currentChunkIndex = 2
-        state.nextChunk()
-        XCTAssertEqual(state.currentChunkIndex, 2)
-        XCTAssertTrue(synth.requests.isEmpty)
-    }
-
-    func testPreviousChunkIsNoOpAtFirstChunk() {
-        let state = makeState()
-        state.textChunks = ["a", "b", "c"]
-        state.previousChunk()
-        XCTAssertEqual(state.currentChunkIndex, 0)
-        XCTAssertTrue(synth.requests.isEmpty)
-    }
-
-    func testStopSetsIdleAndResetsIndex() {
-        let state = makeState()
-        state.textChunks = ["a", "b", "c"]
-        state.currentChunkIndex = 2
-        state.playbackState = .paused
-        state.stop()
-        XCTAssertEqual(state.playbackState, .idle)
-        XCTAssertEqual(state.currentChunkIndex, 0)
-        XCTAssertFalse(state.needsResynthesis)
+    func fetch(_ url: URL) async throws -> WebPage {
+        let key = url.absoluteString
+        state.withLock { $0.calls.append(url) }
+        do {
+            while state.withLock({ $0.held.contains(key) }) { try await Task.sleep(for: .milliseconds(1)) }
+        } catch {
+            state.withLock { $0.cancelled.append(url) }
+            throw error
+        }
+        if let code = state.withLock({ $0.failures.removeValue(forKey: key) }) { throw URLError(code) }
+        guard let page = state.withLock({ $0.pages[key] }) else { throw WebExtractorError.fetchFailed(404) }
+        return page
     }
 }

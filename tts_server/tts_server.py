@@ -4,13 +4,16 @@
 The app launches it as
 
     <python> -I -B tts_server.py --models-dir <dir> [--preload zh|en|zh,en]
+    <hq python> -I -B tts_server.py --engine qwen [--model 1.7b|0.6b] --models-dir <dir> [--preload ...]
 
 with READREAD_TOKEN (64 hex characters) in the environment; READREAD_CACHE_DIR and
-READREAD_USER_LEXICON override where caches and the user lexicon live. stdout carries exactly one line,
-`READY {"port":..,"pid":..,"api":2,"loaded":[..]}` once the server listens on 127.0.0.1 and the
-preloaded routes are warm, or `FATAL {"message":..}` followed by exit status 3. Everything else,
-stray prints included, goes to stderr. The server exits when stdin reaches EOF (the app is gone) and
-within a second of SIGTERM or SIGINT, also in the middle of a synthesis.
+READREAD_USER_LEXICON override where caches and the user lexicon live. The default engine is Kokoro
+(the bundled runtime); --engine qwen runs Qwen3-TTS from the venv of scripts/install-hq.sh. stdout
+carries exactly one line, `READY {"port":..,"pid":..,"api":2,"loaded":[..],"engine":..}` once the
+server listens on 127.0.0.1 and the preloaded routes are warm, or `FATAL {"message":..}` followed by
+exit status 3. Everything else, stray prints included, goes to stderr. The server exits when stdin
+reaches EOF (the app is gone) and within a second of SIGTERM or SIGINT, also in the middle of a
+synthesis.
 """
 
 from __future__ import annotations
@@ -40,9 +43,14 @@ import warnings  # noqa: E402
 
 log = logging.getLogger("readread")
 
-# Imported by the server or by the libraries it drives; checked up front for a clear FATAL message.
-REQUIRED_MODULES = ("numpy", "onnxruntime", "kokoro_onnx", "misaki", "phonemizer", "espeakng_loader", "spacy",
-                    "en_core_web_sm", "opencc", "num2words", "cn2an", "jieba", "pypinyin", "pypinyin_dict")
+# Imported by the server or by the libraries it drives, per engine; checked up front for a clear FATAL message.
+REQUIRED_MODULES = {
+    "kokoro": ("numpy", "onnxruntime", "kokoro_onnx", "misaki", "phonemizer", "espeakng_loader", "spacy",
+               "en_core_web_sm", "opencc", "num2words", "cn2an", "jieba", "pypinyin", "pypinyin_dict"),
+    "qwen": ("numpy", "mlx", "mlx_audio", "transformers", "tokenizers", "huggingface_hub", "safetensors", "misaki",
+             "opencc", "num2words", "pypinyin"),
+}
+INSTALLER = {"kokoro": "./scripts/setup.sh", "qwen": "./scripts/install-hq.sh"}
 _scratch: str | None = None
 _ready = False
 
@@ -73,10 +81,19 @@ class _Parser(argparse.ArgumentParser):
 
 
 def _parse_args() -> argparse.Namespace:
+    from readread_tts.engine import ENGINES, QWEN_MODELS
+
     parser = _Parser(prog="tts_server.py", description="ReadRead TTS server (HTTP API v2)")
-    parser.add_argument("--models-dir", required=True, help="directory holding the four Kokoro model files")
+    parser.add_argument("--engine", choices=ENGINES, default="kokoro", help="kokoro (default) or qwen")
+    parser.add_argument("--model", choices=QWEN_MODELS, help="the Qwen3-TTS model (qwen only; default 1.7b)")
+    parser.add_argument("--models-dir", required=True, help="kokoro: directory holding the four Kokoro model "
+                        "files; qwen: directory holding the Qwen3-TTS model folders")
     parser.add_argument("--preload", default="", help='routes to load before READY: "zh", "en" or "zh,en"')
     args = parser.parse_args()
+    if args.engine != "qwen" and args.model is not None:
+        fatal("bad arguments: --model applies only to --engine qwen")
+    if args.engine == "qwen" and args.model is None:
+        args.model = QWEN_MODELS[0]
     routes = [r.strip() for r in args.preload.split(",") if r.strip()]
     unknown = [r for r in routes if r not in ("zh", "en")]
     if unknown:
@@ -145,30 +162,38 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _on_signal)
     signal.signal(signal.SIGINT, _on_signal)
     threading.Thread(target=_watch_stdin, name="stdin-watchdog", daemon=True).start()
-    log.info("ReadRead TTS server starting (api 2, pid %d, Python %s)", os.getpid(), sys.version.split()[0])
+    log.info("ReadRead TTS server starting (api 2, pid %d, Python %s, engine %s%s)", os.getpid(),
+             sys.version.split()[0], args.engine, f" {args.model}" if args.model else "")
+    qwen = args.engine == "qwen"
 
-    from readread_tts import engine as engine_module
+    # Neither engine module imports its engine's libraries; models load later, in the preload thread.
+    if qwen:
+        from readread_tts import engine_qwen as engine_module  # also switches Hugging Face to offline mode
+    else:
+        from readread_tts import engine_kokoro as engine_module
 
     models_dir = os.path.abspath(os.path.expanduser(args.models_dir))
-    problems = engine_module.check_models(models_dir)
+    problems = engine_module.check_models(models_dir, args.model) if qwen else engine_module.check_models(models_dir)
     if problems:
         fatal("; ".join(problems))
-    missing = [m for m in REQUIRED_MODULES if importlib.util.find_spec(m) is None]
+    missing = [m for m in REQUIRED_MODULES[args.engine] if importlib.util.find_spec(m) is None]
     if missing:
-        fatal(f"missing Python packages: {', '.join(missing)} (run ./scripts/setup.sh)")
-    try:
-        importlib.metadata.distribution("en_core_web_sm")  # what spaCy checks before it would download
-    except importlib.metadata.PackageNotFoundError:
-        fatal("the spaCy model en_core_web_sm is installed without its metadata; reinstall it")
+        fatal(f"missing Python packages: {', '.join(missing)} (run {INSTALLER[args.engine]})")
+    if not qwen:
+        try:
+            importlib.metadata.distribution("en_core_web_sm")  # what spaCy checks before it would download
+        except importlib.metadata.PackageNotFoundError:
+            fatal("the spaCy model en_core_web_sm is installed without its metadata; reinstall it")
 
     cache_dir = os.path.abspath(os.path.expanduser(
         os.environ.get("READREAD_CACHE_DIR") or "~/Library/Caches/ReadRead"))
     user_lexicon = os.path.abspath(os.path.expanduser(
         os.environ.get("READREAD_USER_LEXICON") or "~/Library/Application Support/ReadRead/lexicon_zh.json"))
     try:
-        from readread_tts import espeak
+        if not qwen:
+            from readread_tts import espeak
 
-        espeak.prepare(cache_dir)
+            espeak.prepare(cache_dir)
         _scratch = tempfile.tempdir = _scratch_dir(cache_dir)
     except Exception as error:  # noqa: BLE001
         fatal(f"cannot set up the cache directory {cache_dir}: {error}")
@@ -176,12 +201,19 @@ def main() -> None:
     try:
         from readread_tts.server import Server
 
-        engine = engine_module.Engine(models_dir, cache_dir, user_lexicon)
+        if qwen:
+            engine = engine_module.Engine(models_dir, args.model, cache_dir)
+        else:
+            engine = engine_module.Engine(models_dir, cache_dir, user_lexicon)
         server = Server(engine, token)
     except Exception as error:  # noqa: BLE001
         fatal(f"cannot start the HTTP server: {type(error).__name__}: {error}")
-    log.info("listening on 127.0.0.1:%d; models %s; cache %s; user lexicon %s", server.port, models_dir,
-             cache_dir, user_lexicon)
+    if qwen:
+        log.info("listening on 127.0.0.1:%d; engine qwen, model %s in %s; cache %s", server.port, args.model,
+                 models_dir, cache_dir)
+    else:
+        log.info("listening on 127.0.0.1:%d; models %s; cache %s; user lexicon %s", server.port, models_dir,
+                 cache_dir, user_lexicon)
 
     failure: list[BaseException] = []
 
@@ -201,8 +233,10 @@ def main() -> None:
     if failure:
         fatal(f"loading the models failed: {type(failure[0]).__name__}: {failure[0]}")
 
-    _emit("READY " + json.dumps({"port": server.port, "pid": os.getpid(), "api": 2, "loaded": engine.loaded()},
-                                separators=(",", ":")))
+    ready = {"port": server.port, "pid": os.getpid(), "api": 2, "loaded": engine.loaded(), "engine": engine.name}
+    if engine.model is not None:
+        ready["model"] = engine.model
+    _emit("READY " + json.dumps(ready, separators=(",", ":")))
     _ready = True
     log.info("ready (loaded: %s)", ", ".join(engine.loaded()) or "nothing yet")
     server.serve_forever(poll_interval=0.5)

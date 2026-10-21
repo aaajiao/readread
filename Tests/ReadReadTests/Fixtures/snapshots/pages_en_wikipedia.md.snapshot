@@ -1,0 +1,748 @@
+title: Speech synthesis
+source: en.wikipedia.org
+language: en
+blocks: 161, units: 422
+
+# 0 title
+  0 en title | Speech synthesis.
+
+# 1 paragraph
+  1 en | Speech synthesis is the artificial production of human speech.
+  2 en | A computer system used for this purpose is called a speech synthesizer, and can be implemented in software or hardware products.
+  3 en | A text-to-speech (TTS) system converts normal language text into speech; other systems render symbolic linguistic representations like phonetic transcriptions into speech.
+  4 en | The reverse process is speech recognition.
+
+# 2 paragraph
+  5 en | Synthesized speech can be created by concatenating pieces of recorded speech that are stored in a database.
+  6 en | Systems differ in the size of the stored speech units; a system that stores phones or diphones provides the largest output range, but may lack clarity.
+  7 en | For specific usage domains, the storage of entire words or sentences allows for high-quality output.
+  8 en | Alternatively, a synthesizer can incorporate a model of the vocal tract and other human voice characteristics to create a completely "synthetic" voice output.
+
+# 3 paragraph
+  9 en | The quality of a speech synthesizer is judged by its similarity to the human voice and by its ability to be understood clearly.
+  10 en | An intelligible text-to-speech program allows people with visual impairments or reading disabilities to listen to written words on a home computer.
+  11 en | The earliest computer operating system to have included a speech synthesizer was Unix in 1974, through the Unix speak utility.
+  12 en | In 2000, Microsoft Sam was the default text-to-speech voice synthesizer used by the narrator accessibility feature, which shipped with all Windows 2000 operating systems, and subsequent Windows XP systems.
+
+# 4 paragraph
+  13 en | Overview of a typical TTS system
+
+# 5 paragraph
+  14 en | A text-to-speech system (or "engine") is composed of two parts: a front-end and a back-end.
+  15 en | The front-end has two major tasks.
+  16 en | First, it converts raw text containing symbols like numbers and abbreviations into the equivalent of written-out words.
+  17 en | This process is often called text normalization, pre-processing, or tokenization.
+  18 en | The front-end then assigns phonetic transcriptions to each word, and divides and marks the text into prosodic units, like phrases, clauses, and sentences.
+  19 en | The process of assigning phonetic transcriptions to words is called text-to-phoneme or grapheme -to-phoneme conversion.
+  20 en | Phonetic transcriptions and prosody information together make up the symbolic linguistic representation that is output by the front-end.
+  21 en | The back-end—often referred to as the synthesizer—then converts the symbolic linguistic representation into sound.
+  22 en | In certain systems, this part includes the computation of the target prosody (pitch contour, phoneme durations), which is then imposed on the output speech.
+
+# 6 heading
+  23 en heading | History.
+
+# 7 paragraph
+  24 en | Long before the invention of electronic signal processing, some people tried to build machines to emulate human speech.
+  25 en | There were also legends of the existence of " Brazen Heads ", such as those involving Pope Silvester II (d. 1003 AD), Albertus Magnus (1198–1280), and Roger Bacon (1214–1294).
+
+# 8 paragraph
+  26 en | In 1779, the German - Danish scientist Christian Gottlieb Kratzenstein won the first prize in a competition announced by the Russian Imperial Academy of Sciences and Arts
+  27 en | for models he built of the human vocal tract that could produce the five long vowel sounds (in International Phonetic Alphabet notation: [aː], [eː], [iː], [oː] and [uː]).
+  28 en | There followed the bellows -operated " acoustic-mechanical speech machine " of Wolfgang von Kempelen of Pressburg, Hungary, described in a 1791 paper.
+  29 en | This machine added models of the tongue and lips, enabling it to produce consonants as well as vowels.
+  30 en | In 1837, Charles Wheatstone produced a "speaking machine" based on von Kempelen's design, and in 1846, Joseph Faber exhibited the " Euphonia ".
+  31 en | In 1923, Paget resurrected Wheatstone's design.
+
+# 9 paragraph
+  32 en | In the 1930s, Bell Labs developed the vocoder, which automatically analyzed speech into its fundamental tones and resonances.
+  33 en | From his work on the vocoder, Homer Dudley developed a keyboard-operated voice-synthesizer called The Voder (Voice Demonstrator), which he exhibited at the 1939 New York World's Fair.
+
+# 10 paragraph
+  34 en | Franklin S. Cooper and his colleagues at Haskins Laboratories built the pattern playback in the late 1940s and completed it in 1950.
+  35 en | There were several different versions of this hardware device; only one currently survives.
+  36 en | The machine converts pictures of the acoustic patterns of speech in the form of a spectrogram back into sound.
+  37 en | Using this device, Alvin Liberman and colleagues discovered acoustic cues for the perception of phonetic segments (consonants and vowels).
+
+# 11 heading
+  38 en heading | Electronic devices.
+
+# 12 paragraph
+  39 en | Computer and speech synthesizer housing used by Stephen Hawking in 1999
+
+# 13 paragraph
+  40 en | The first computer-based speech-synthesis systems originated in the late 1950s.
+  41 en | Noriko Umeda et al. developed the first general English text-to-speech system in 1968, at the Electrotechnical Laboratory in Japan.
+  42 en | In 1961, physicist John Larry Kelly, Jr and his colleague Louis Gerstman used an IBM 7090 computer to synthesize speech, an event among the most prominent in the history of Bell Labs.
+  43 en | Kelly's voice recorder synthesizer (vocoder) recreated the song " Daisy Bell ", with musical accompaniment from Max Mathews.
+  44 en | Coincidentally, Arthur C. Clarke was visiting his friend and colleague John Pierce at the Bell Labs Murray Hill facility.
+  45 en | Clarke was so impressed by the demonstration that he used it in the climactic scene of his screenplay for his novel 2001:
+  46 en | A Space Odyssey, where the HAL 9000 computer sings the same song as astronaut Dave Bowman puts it to sleep.
+  47 en | Despite the success of purely electronic speech synthesis, research into mechanical speech-synthesizers continues.
+
+# 14 paragraph
+  48 en | Linear predictive coding (LPC), a form of speech coding, began development with the work of Fumitada Itakura of Nagoya University and Shuzo Saito of Nippon Telegraph and Telephone (NTT) in 1966.
+  49 en | Further developments in LPC technology were made by Bishnu S. Atal and Manfred R. Schroeder at Bell Labs during the 1970s.
+  50 en | LPC was later the basis for early speech synthesizer chips, such as the Texas Instruments LPC Speech Chips used in the Speak & Spell toys from 1978.
+
+# 15 paragraph
+  51 en | In 1975, Fumitada Itakura developed the line spectral pairs (LSP) method for high-compression speech coding, while at NTT.
+  52 en | From 1975 to 1981, Itakura studied problems in speech analysis and synthesis based on the LSP method.
+  53 en | In 1980, his team developed an LSP-based speech synthesizer chip.
+  54 en | LSP is an important technology for speech synthesis and coding, and in the 1990s was adopted by almost all international speech coding standards as an essential component,
+  55 en | contributing to the enhancement of digital speech communication over mobile channels and the internet.
+
+# 16 paragraph
+  56 en | In 1975, MUSA was released, and was one of the first Speech Synthesis systems.
+  57 en | It consisted of a stand-alone computer hardware and a specialized software that enabled it to read Italian.
+  58 en | A second version, released in 1978, was also able to sing Italian in an " a cappella " style.
+
+# 17 paragraph
+  59 en | DECtalk demo recording using the Perfect Paul and Uppity Ursula voices
+
+# 18 paragraph
+  60 en | Dominant systems in the 1980s and 1990s were the DECtalk system, based largely on the work of Dennis Klatt at MIT, and the Bell Labs system;
+  61 en | the latter was one of the first multilingual language-independent systems, making extensive use of natural language processing methods.
+
+# 19 paragraph
+  62 en | Fidelity Voice Chess Challenger (1979), the first talking chess computer
+
+# 20 paragraph
+  63 en | Speech output from Fidelity Voice Chess Challenger
+
+# 21 paragraph
+  64 en | Handheld electronics featuring speech synthesis began emerging in the 1970s.
+  65 en | One of the first was the Telesensory Systems Inc. (TSI) Speech+ portable calculator for the blind in 1976.
+  66 en | Other devices had primarily educational purposes, such as the Speak & Spell toy produced by Texas Instruments in 1978.
+  67 en | Fidelity released a speaking version of its electronic chess computer in 1979.
+  68 en | The first video game to feature speech synthesis was the 1980 shoot 'em up arcade game, Stratovox (known in Japan as Speak & Rescue), from Sun Electronics.
+  69 en | The first personal computer game with speech synthesis was Manbiki Shoujo (Shoplifting Girl), released in 1980 for the PET 2001,
+  70 en | for which the game's developer, Hiroshi Suzuki, developed a " zero cross " programming technique to produce a synthesized speech waveform.
+  71 en | Another early example, the arcade version of Berzerk, also dates from 1980.
+  72 en | The Milton Bradley Company produced the first multi-player electronic game using voice synthesis, Milton, in the same year.
+
+# 22 paragraph
+  73 en | In 1976, Computalker Consultants released their CT-1 Speech Synthesizer.
+  74 en | Designed by D. Lloyd Rice and Jim Cooper, it was an analog synthesizer built to work with microcomputers using the S-100 bus standard.
+
+# 23 paragraph
+  75 en | Synthesized voices typically sounded male until 1990, when Ann Syrdal, at AT&T Bell Laboratories, created a female voice.
+
+# 24 paragraph
+  76 en | Ray Kurzweil predicted in 2005 that as the cost-performance ratio caused speech synthesizers to become cheaper and more accessible, more people would benefit from the use of text-to-speech programs.
+
+# 25 heading
+  77 en heading | Artificial intelligence.
+
+# 26 paragraph
+  78 en | In September 2016, DeepMind released WaveNet, which demonstrated that deep learning models are capable of modeling raw waveforms and
+  79 en | generating speech from acoustic features like spectrograms or mel-spectrograms, starting the field of deep learning speech synthesis.
+  80 en | Although WaveNet was initially considered to be computationally expensive and slow to be used in consumer products at the time, a year after its release,
+  81 en | DeepMind unveiled a modified version of WaveNet known as "Parallel WaveNet," a production model 1,000 times faster than the original.
+  82 en | This was followed by Google AI 's Tacotron 2 in 2018, which demonstrated that neural networks could produce highly natural speech synthesis but required substantial training data—
+  83 en | typically tens of hours of audio—to achieve acceptable quality.
+  84 en | Tacotron 2 employed an autoencoder architecture with attention mechanisms to convert input text into mel-spectrograms, which were then converted to waveforms using a separate neural vocoder.
+  85 en | When trained on smaller datasets, such as 2 hours of speech, the output quality degraded while still being able to maintain intelligible speech,
+  86 en | and with just 24 minutes of training data, Tacotron 2 failed to produce intelligible speech.
+
+# 27 paragraph
+  87 en | In 2019, Microsoft Research introduced FastSpeech, which addressed speed limitations in autoregressive models like Tacotron 2.
+  88 en | The same year saw the release of HiFi-GAN, a generative adversarial network (GAN)-based vocoder that improved the efficiency of waveform generation while producing high-fidelity speech.
+  89 en | In 2020, the release of Glow-TTS introduced a flow-based approach that allowed for both fast inference and voice style transfer capabilities.
+
+# 28 paragraph
+  90 en | In March 2020, the free text-to-speech website 15.ai was launched.
+  91 en | 15.ai gained widespread international attention in early 2021 for its ability to synthesize emotionally expressive speech of fictional characters from popular media with minimal amount of data.
+  92 en | The creator of 15.ai stated that 15 seconds of training data is sufficient to perfectly clone a person's voice (hence its name,
+  93 en | "15.ai"), a significant reduction from the previously known data requirement of tens of hours.
+  94 en | 15.ai is credited as the first platform to popularize AI voice cloning in memes and content creation.
+  95 en | In January 2022, the first instance of speech synthesis NFT fraud occurred when a cryptocurrency company called Voiceverse generated voice lines using 15.ai,
+  96 en | pitched them up to sound unrecognizable, promoted them as the byproduct of their own technology, and sold them as NFTs without permission.
+
+# 29 paragraph
+  97 en | In January 2023, ElevenLabs launched its browser-based text-to-speech platform, which employs advanced algorithms to analyze contextual aspects of text and detect emotions such as anger, sadness, happiness, or alarm.
+  98 en | The platform is able to adjust intonation and pacing based on linguistic context to produce lifelike speech with human-like inflection,
+  99 en | and offers features including multilingual speech generation and long-form content creation.
+
+# 30 paragraph
+  100 en | In March 2024, OpenAI corroborated the 15 second benchmark to clone a human's voice.
+  101 en | However, they deemed their Voice Engine tool "too risky" for general release, stating that they would only release a preview and not release the technology for public use.
+
+# 31 heading
+  102 en heading | Synthesizer technologies.
+
+# 32 paragraph
+  103 en | The most important qualities of a speech synthesis system are naturalness and intelligibility.
+  104 en | Naturalness describes how closely the output sounds like human speech, while intelligibility is the ease with which the output is understood.
+  105 en | The ideal speech synthesizer is both natural and intelligible.
+  106 en | Speech synthesis systems usually try to maximize both characteristics.
+
+# 33 paragraph
+  107 en | The two primary technologies generating synthetic speech waveforms are concatenative synthesis and formant synthesis.
+  108 en | Each technology has strengths and weaknesses, and the intended uses of a synthesis system will typically determine which approach is used.
+
+# 34 heading
+  109 en heading | Concatenation synthesis.
+
+# 35 paragraph
+  110 en | Concatenative synthesis is based on the concatenation (stringing together) of segments of recorded speech.
+  111 en | Generally, concatenative synthesis produces the most natural-sounding synthesized speech.
+  112 en | However, differences between natural variations in speech and the nature of the automated techniques for segmenting the waveforms sometimes result in audible glitches in the output.
+  113 en | There are three main sub-types of concatenative synthesis.
+
+# 36 heading
+  114 en heading | Unit selection synthesis.
+
+# 37 paragraph
+  115 en | Unit selection synthesis uses large databases of recorded speech.
+  116 en | During database creation, each recorded utterance is segmented into some or all of the following: individual phones, diphones, half-phones, syllables, morphemes, words, phrases, and sentences.
+  117 en | Typically, the division into segments is done using a specially modified speech recognizer set to a "forced alignment" mode with some manual correction afterward,
+  118 en | using visual representations such as the waveform and spectrogram.
+  119 en | An index of the units in the speech database is then created based on the segmentation and acoustic parameters like the fundamental frequency (pitch), duration, position in the syllable, and neighboring phones.
+  120 en | At run time, the desired target utterance is created by determining the best chain of candidate units from the database (unit selection).
+  121 en | This process is typically achieved using a specially weighted decision tree.
+
+# 38 paragraph
+  122 en | Unit selection provides the greatest naturalness, because it applies only a small amount of digital signal processing (DSP) to the recorded speech.
+  123 en | DSP often makes recorded speech sound less natural, although some systems use a small amount of signal processing at the point of concatenation to smooth the waveform.
+  124 en | The output from the best unit-selection systems is often indistinguishable from real human voices, especially in contexts for which the TTS system has been tuned.
+  125 en | However, maximum naturalness typically require unit-selection speech databases to be very large, in some systems ranging into the gigabytes of recorded data, representing dozens of hours of speech.
+  126 en | Also, unit selection algorithms have been known to select segments from a place that results in less than ideal synthesis (e.g. minor words become unclear) even when a better choice exists in the database.
+  127 en | Recently, researchers have proposed various automated methods to detect unnatural segments in unit-selection speech synthesis systems.
+
+# 39 heading
+  128 en heading | Diphone synthesis.
+
+# 40 paragraph
+  129 en | Diphone synthesis uses a minimal speech database containing all the diphones (sound-to-sound transitions) occurring in a language.
+  130 en | The number of diphones depends on the phonotactics of the language: for example, Spanish has about 800 diphones, and German about 2500.
+  131 en | In diphone synthesis, only one example of each diphone is contained in the speech database.
+  132 en | At runtime, the target prosody of a sentence is superimposed on these minimal units by means of digital signal processing techniques such as linear predictive coding,
+  133 en | PSOLA or MBROLA. or more recent techniques such as pitch modification in the source domain using discrete cosine transform.
+  134 en | Diphone synthesis suffers from the sonic glitches of concatenative synthesis and the robotic-sounding nature of formant synthesis, and has few of the advantages of either approach other than small size.
+  135 en | As such, its use in commercial applications is declining, although it continues to be used in research because there are a number of freely available software implementations.
+  136 en | An early example of Diphone synthesis is a teaching robot, Leachim, that was invented by Michael J. Freeman.
+  137 en | Leachim contained information regarding class curricular and certain biographical information about the students whom it was programmed to teach.
+  138 en | It was tested in a fourth grade classroom in the Bronx, New York.
+
+# 41 heading
+  139 en heading | Domain-specific synthesis.
+
+# 42 paragraph
+  140 en | Domain-specific synthesis concatenates prerecorded words and phrases to create complete utterances.
+  141 en | It is used in applications where the variety of texts the system will output is limited to a particular domain, like transit schedule announcements or weather reports.
+  142 en | The technology is very simple to implement, and has been in commercial use for a long time, in devices like talking clocks and calculators.
+  143 en | The level of naturalness of these systems can be very high because the variety of sentence types is limited, and they closely match the prosody and intonation of the original recordings.
+
+# 43 paragraph
+  144 en | Because these systems are limited by the words and phrases in their databases, they are not general-purpose and can only synthesize the combinations of words and phrases with which they have been preprogrammed.
+  145 en | The blending of words within naturally spoken language however can still cause problems unless the many variations are taken into account.
+  146 en | For example, in non-rhotic dialects of English the "r" in words like "clear" /ˈklɪə/ is usually only pronounced when the following word has a vowel as its first letter (e.g. "clear out" is realized as /ˌklɪəɹˈʌʊt/).
+  147 en | Likewise in French, many final consonants become no longer silent if followed by a word that begins with a vowel, an effect called liaison.
+  148 en | This alternation cannot be reproduced by a simple word-concatenation system, which would require additional complexity to be context-sensitive.
+
+# 44 heading
+  149 en heading | Formant synthesis.
+
+# 45 paragraph
+  150 en | Formant synthesis does not use human speech samples at runtime.
+  151 en | Instead, the synthesized speech output is created using additive synthesis and an acoustic model (physical modelling synthesis).
+  152 en | Parameters such as fundamental frequency, voicing, and noise levels are varied over time to create a waveform of artificial speech.
+  153 en | This method is sometimes called rules-based synthesis; however, many concatenative systems also have rules-based components.
+  154 en | Many systems based on formant synthesis technology generate artificial, robotic-sounding speech that would never be mistaken for human speech.
+  155 en | However, maximum naturalness is not always the goal of a speech synthesis system, and formant synthesis systems have advantages over concatenative systems.
+  156 en | Formant-synthesized speech can be reliably intelligible, even at very high speeds, avoiding the acoustic glitches that commonly plague concatenative systems.
+  157 en | High-speed synthesized speech is used by the visually impaired to quickly navigate computers using a screen reader.
+  158 en | Formant synthesizers are usually smaller programs than concatenative systems because they do not have a database of speech samples.
+  159 en | They can therefore be used in embedded systems, where memory and microprocessor power are especially limited.
+  160 en | Because formant-based systems have complete control of all aspects of the output speech, a wide variety of prosodies and intonations can be output,
+  161 en | conveying not just questions and statements, but a variety of emotions and tones of voice.
+
+# 46 paragraph
+  162 en | Examples of non-real-time but highly accurate intonation control in formant synthesis include the work done in the late 1970s for the Texas Instruments toy Speak & Spell,
+  163 en | and in the early 1980s Sega arcade machines and in many Atari, Inc. arcade games using the TMS5220 LPC Chips.
+  164 en | Creating proper intonation for these projects was painstaking, and the results have yet to be matched by real-time text-to-speech interfaces.
+
+# 47 paragraph
+  165 en | For tonal languages, such as Chinese or Taiwanese language, there are different levels of tone sandhi required and sometimes the output of speech synthesizer may result in the mistakes of tone sandhi.
+
+# 48 heading
+  166 en heading | Articulatory synthesis.
+
+# 49 paragraph
+  167 en | Articulatory synthesis consists of computational techniques for synthesizing speech based on models of the human vocal tract and the articulation processes occurring there.
+  168 en | The first articulatory synthesizer regularly used for laboratory experiments was developed at Haskins Laboratories in the mid-1970s by Philip Rubin, Tom Baer, and Paul Mermelstein.
+  169 en | This synthesizer, known as ASY, was based on vocal tract models developed at Bell Laboratories in the 1960s and 1970s by Paul Mermelstein, Cecil Coker, and colleagues.
+
+# 50 paragraph
+  170 en | Until recently, articulatory synthesis models have not been incorporated into commercial speech synthesis systems.
+  171 en | A notable exception is the NeXT -based system originally developed and marketed by Trillium Sound Research, a spin-off company of the University of Calgary, where much of the original research was conducted.
+  172 en | Following the demise of the various incarnations of NeXT (started by Steve Jobs in the late 1980s and merged with Apple Computer in 1997),
+  173 en | the Trillium software was published under the GNU General Public License, with work continuing as gnuspeech.
+  174 en | The system, first marketed in 1994, provides full articulatory-based text-to-speech conversion using a waveguide
+  175 en | or transmission-line analog of the human oral and nasal tracts controlled by Carré's "distinctive region model".
+
+# 51 paragraph
+  176 en | More recent synthesizers, developed by Jorge C. Lucero and colleagues, incorporate models of vocal fold biomechanics,
+  177 en | glottal aerodynamics and acoustic wave propagation in the bronchi, trachea, nasal and oral cavities, and thus constitute full systems of physics-based speech simulation.
+
+# 52 heading
+  178 en heading | HMM-based synthesis.
+
+# 53 paragraph
+  179 en | HMM-based synthesis is a synthesis method based on hidden Markov models, also called Statistical Parametric Synthesis.
+  180 en | In this system, the frequency spectrum (vocal tract), fundamental frequency (voice source), and duration (prosody) of speech are modeled simultaneously by HMMs.
+  181 en | Speech waveforms are generated from HMMs themselves based on the maximum likelihood criterion.
+
+# 54 heading
+  182 en heading | Sinewave synthesis.
+
+# 55 paragraph
+  183 en | Sinewave synthesis is a technique for synthesizing speech by replacing the formants (main bands of energy) with pure tone whistles.
+
+# 56 heading
+  184 en heading | Deep learning-based synthesis.
+
+# 57 paragraph
+  185 en | Speech synthesis example using the HiFi-GAN neural vocoder
+
+# 58 paragraph
+  186 en | Deep learning speech synthesis uses deep neural networks (DNN) to produce artificial speech from text (text-to-speech) or spectrum (vocoder).
+  187 en | The deep neural networks are trained using a large amount of recorded speech and, in the case of a text-to-speech system, the associated labels and/or input text.
+
+# 59 heading
+  188 en heading | Audio deepfakes.
+
+# 60 paragraph
+  189 en | Deepfake audio clip simulating the voice of Donald Trump
+
+# 61 paragraph
+  190 en | Audio deepfake technology, also referred to as voice cloning or deepfake audio,
+  191 en | is an application of artificial intelligence designed to generate speech that convincingly mimics specific individuals, often synthesizing phrases or sentences they have never spoken.
+
+# 62 paragraph
+  192 en | Initially developed with the intent to enhance various aspects of human life, it has practical applications such as generating audiobooks and assisting individuals who have lost their voices due to medical conditions.
+  193 en | Additionally, it has commercial uses, including the creation of personalized digital assistants, natural-sounding text-to-speech systems, and advanced speech translation services.
+  194 en | As with other forms of deepfakes, audio deepfakes have faced criticism for their use in scams, phishing, and misinformation campaigns.
+
+# 63 paragraph
+  195 en | In 2023, VICE reporter Joseph Cox published findings that he had recorded five minutes of himself talking and then
+  196 en | used a tool developed by ElevenLabs to create voice deepfakes that defeated a bank's voice-authentication system.
+
+# 64 heading
+  197 en heading | Challenges.
+
+# 65 heading
+  198 en heading | Text normalization challenges.
+
+# 66 paragraph
+  199 en | The process of normalizing text is rarely straightforward.
+  200 en | Texts are full of heteronyms, numbers, and abbreviations that all require expansion into a phonetic representation.
+  201 en | There are many spellings in English which are pronounced differently based on context.
+  202 en | For example, "My latest project is to learn how to better project my voice" contains two pronunciations of "project".
+
+# 67 paragraph
+  203 en | Most text-to-speech (TTS) systems do not generate semantic representations of their input texts, as processes for doing so are unreliable, poorly understood, and computationally ineffective.
+  204 en | As a result, various heuristic techniques are used to guess the proper way to disambiguate homographs, like examining neighboring words and using statistics about frequency of occurrence.
+
+# 68 paragraph
+  205 en | Recently TTS systems have begun to use HMMs (discussed above) to generate " parts of speech " to aid in disambiguating homographs.
+  206 en | This technique is quite successful for many cases such as whether "read" should be pronounced as "red" implying past tense, or as "reed" implying present tense.
+  207 en | Typical error rates when using HMMs in this fashion are usually below five percent.
+  208 en | These techniques also work well for most European languages, although access to required training corpora is frequently difficult in these languages.
+
+# 69 paragraph
+  209 en | Deciding how to convert numbers is another problem that TTS systems have to address.
+  210 en | It is a simple programming challenge to convert a number into words (at least in English), like "1325" becoming "one thousand three hundred twenty-five".
+  211 en | However, numbers occur in many different contexts; "1325" may also be read as "one three two five", "thirteen twenty-five" or "thirteen hundred and twenty five".
+  212 en | A TTS system can often infer how to expand a number based on surrounding words, numbers, and punctuation, and sometimes the system provides a way to specify the context if it is ambiguous.
+  213 en | Roman numerals can also be read differently depending on context.
+  214 en | For example, "Henry VIII" reads as "Henry the Eighth", while "Chapter VIII" reads as "Chapter Eight".
+
+# 70 paragraph
+  215 en | Similarly, abbreviations can be ambiguous.
+  216 en | For example, the abbreviation "in" for "inches" must be differentiated from the word "in", and the address "12 St John St." uses the same abbreviation for both "Saint" and "Street".
+  217 en | TTS systems with intelligent front ends can make educated guesses about ambiguous abbreviations, while others provide the same result in all cases,
+  218 en | resulting in nonsensical (and sometimes comical) outputs, such as " Ulysses S. Grant " being rendered as "Ulysses South Grant".
+
+# 71 heading
+  219 en heading | Text-to-phoneme challenges.
+
+# 72 paragraph
+  220 en | Speech synthesis systems use two basic approaches to determine the pronunciation of a word based on its spelling,
+  221 en | a process which is often called text-to-phoneme or grapheme -to-phoneme conversion (phoneme is the term used by linguists to describe distinctive sounds in a language).
+  222 en | The simplest approach to text-to-phoneme conversion is the dictionary-based approach, where a large dictionary containing all the words of a language and their correct pronunciations is stored by the program.
+  223 en | Determining the correct pronunciation of each word is a matter of looking up each word in the dictionary and replacing the spelling with the pronunciation specified in the dictionary.
+  224 en | The other approach is rule-based, in which pronunciation rules are applied to words to determine their pronunciations based on their spellings.
+  225 en | This is similar to the "sounding out", or synthetic phonics, approach to learning reading.
+
+# 73 paragraph
+  226 en | Each approach has advantages and drawbacks.
+  227 en | The dictionary-based approach is quick and accurate, but completely fails if it is given a word which is not in its dictionary.
+  228 en | As dictionary size grows, so too does the memory space requirements of the synthesis system.
+  229 en | On the other hand, the rule-based approach works on any input, but the complexity of the rules grows substantially as the system takes into account irregular spellings or pronunciations.
+  230 en | (Consider that the word "of" is very common in English, yet is the only word in which the letter "f" is pronounced [v].)
+  231 en | As a result, nearly all speech synthesis systems use a combination of these approaches.
+
+# 74 paragraph
+  232 en | Languages with a phonemic orthography have a very regular writing system, and the prediction of the pronunciation of words based on their spellings is quite successful.
+  233 en | Speech synthesis systems for such languages often use the rule-based method extensively, resorting to dictionaries only for those few words,
+  234 en | like foreign names and loanwords, whose pronunciations are not obvious from their spellings.
+  235 en | On the other hand, speech synthesis systems for languages like English, which have extremely irregular spelling systems,
+  236 en | are more likely to rely on dictionaries, and to use rule-based methods only for unusual words, or words that are not in their dictionaries.
+
+# 75 heading
+  237 en heading | Evaluation challenges.
+
+# 76 paragraph
+  238 en | The consistent evaluation of speech synthesis systems may be difficult because of a lack of universally agreed objective evaluation criteria.
+  239 en | Different organizations often use different speech data.
+  240 en | The quality of speech synthesis systems also depends on the quality of the production technique (which may involve analogue or digital recording) and on the facilities used to replay the speech.
+  241 en | Evaluating speech synthesis systems has therefore often been compromised by differences between production techniques and replay facilities.
+
+# 77 paragraph
+  242 en | Since 2005, however, some researchers have started to evaluate speech synthesis systems using a common speech dataset.
+
+# 78 heading
+  243 en heading | Prosodics and emotional content.
+
+# 79 paragraph
+  244 en | A study in the journal Speech Communication by Amy Drahota and colleagues at the University of Portsmouth, UK,
+  245 en | reported that listeners to voice recordings could determine, at better than chance levels, whether or not the speaker was smiling.
+  246 en | It was suggested that identification of the vocal features that signal emotional content may be used to help make synthesized speech sound more natural.
+  247 en | One of the related issues is modification of the pitch contour of the sentence, depending upon whether it is an affirmative, interrogative or exclamatory sentence.
+  248 en | One of the techniques for pitch modification uses discrete cosine transform in the source domain (linear prediction residual).
+  249 en | Such pitch synchronous pitch modification techniques need a priori pitch marking of the synthesis speech database using techniques such
+  250 en | as epoch extraction using dynamic plosion index applied on the integrated linear prediction residual of the voiced regions of speech.
+  251 en | In general, prosody remains a challenge for speech synthesizers, and is an active research topic.
+
+# 80 heading
+  252 en heading | Dedicated hardware.
+
+# 81 paragraph
+  253 en | A speech synthesis kit produced by Bell System
+
+# 82 listItem
+  254 en | Icophone
+
+# 83 listItem
+  255 en | General Instrument SP0256-AL2
+
+# 84 listItem
+  256 en | National Semiconductor DT1050 Digitalker (Mozer – Forrest Mozer)
+
+# 85 listItem
+  257 en | Texas Instruments LPC Speech Chips
+
+# 86 heading
+  258 en heading | Hardware and software systems.
+
+# 87 paragraph
+  259 en | Popular systems offering speech synthesis as a built-in capability.
+
+# 88 heading
+  260 en heading | Texas Instruments.
+
+# 89 paragraph
+  261 en | TI-99/4A speech demo using the built-in vocabulary
+
+# 90 paragraph
+  262 en | In the early 1980s, TI was known as a pioneer in speech synthesis, and a highly popular plug-in speech synthesizer module was available for the TI-99/4 and 4A. Speech synthesizers
+  263 en | were offered free with the purchase of a number of cartridges and were used by many TI-written video games (games offered with speech during this promotion included Alpiner and Parsec).
+  264 en | The synthesizer uses a variant of linear predictive coding and has a small in-built vocabulary.
+  265 en | The original intent was to release small cartridges that plugged directly into the synthesizer unit, which would increase the device's built-in vocabulary.
+  266 en | However, the success of software text-to-speech in the Terminal Emulator II cartridge canceled that plan.
+
+# 91 heading
+  267 en heading | Mattel.
+
+# 92 paragraph
+  268 en | The Mattel Intellivision game console offered the Intellivoice Voice Synthesis module in 1982.
+  269 en | It included the SP0256 Narrator speech synthesizer chip on a removable cartridge.
+  270 en | The Narrator had 2kB of Read-Only Memory (ROM), and this was utilized to store a database of generic words that could be combined to make phrases in Intellivision games.
+  271 en | Since the Orator chip could also accept speech data from external memory, any additional words or phrases needed could be stored inside the cartridge itself.
+  272 en | The data consisted of strings of analog-filter coefficients to modify the behavior of the chip's synthetic vocal-tract model, rather than simple digitized samples.
+
+# 93 heading
+  273 en heading | SAM.
+
+# 94 paragraph
+  274 en | A demo of SAM on the C64
+
+# 95 paragraph
+  275 en | Also released in 1982, Software Automatic Mouth was the first commercial all-software voice synthesis program.
+  276 en | It was later used as the basis for Macintalk.
+  277 en | The program was available for non-Macintosh Apple computers (including the Apple II, and the Lisa), various Atari models and the Commodore 64.
+  278 en | The Apple version preferred additional hardware that contained DACs, although it could instead use the computer's one-bit audio output (with the addition of much distortion) if the card was not present.
+  279 en | The Atari made use of the embedded POKEY audio chip.
+  280 en | Speech playback on the Atari normally disabled interrupt requests and shut down the ANTIC chip during vocal output.
+  281 en | The audible output is extremely distorted speech when the screen is on.
+  282 en | The Commodore 64 made use of the 64's embedded SID audio chip.
+
+# 96 heading
+  283 en heading | Atari.
+
+# 97 paragraph
+  284 en | Atari ST speech synthesis demo
+
+# 98 paragraph
+  285 en | Arguably, the first speech system integrated into an operating system was the circa 1983 unreleased Atari 1400XL/1450XL computers.
+  286 en | These used the Votrax SC01 chip and a finite-state machine to enable World English Spelling text-to-speech synthesis.
+
+# 99 paragraph
+  287 en | The Atari ST computers were sold with "stspeech.tos" on floppy disk.
+
+# 100 heading
+  288 en heading | Apple.
+
+# 101 paragraph
+  289 en | MacinTalk 1 demo
+
+# 102 paragraph
+  290 en | MacinTalk 2 demo featuring the Mr. Hughes and Marvin voices
+
+# 103 paragraph
+  291 en | The first speech system integrated into an operating system that shipped in quantity was Apple Computer 's MacInTalk.
+  292 en | The software was licensed from third-party developers Joseph Katz and Mark Barton (later, SoftVoice, Inc.) and was featured during the 1984 introduction of the Macintosh computer.
+  293 en | This January demo required 512 kilobytes of RAM.
+  294 en | As a result, it could not run in the 128 kilobytes of RAM the first Mac actually shipped with.
+  295 en | So, the demo was accomplished with a prototype 512k Mac, although those in attendance were not told of this and the synthesis demo created considerable excitement for the Macintosh.
+  296 en | In the early 1990s Apple expanded its capabilities offering system wide text-to-speech support.
+  297 en | With the introduction of faster PowerPC-based computers they included higher quality voice sampling.
+  298 en | Apple also introduced speech recognition into its systems which provided a fluid command set.
+  299 en | More recently, Apple has added sample-based voices.
+  300 en | Starting as a curiosity, the speech system of Apple Macintosh has evolved into a fully supported program, PlainTalk, for people with vision problems.
+  301 en | VoiceOver was for the first time featured in 2005 in Mac OS X Tiger (10.4).
+  302 en | During 10.4 (Tiger) and first releases of 10.5 (Leopard) there was only one standard voice shipping with Mac OS X. Starting with 10.6 (Snow Leopard), the user can choose out of a wide range list of multiple voices.
+  303 en | VoiceOver voices feature the taking of realistic-sounding breaths between sentences, as well as improved clarity at high read rates over PlainTalk.
+  304 en | Mac OS X also includes say, a command-line based application that converts text to audible speech.
+  305 en | The AppleScript Standard Additions includes a say verb that allows a script to use any of the installed voices and to control the pitch, speaking rate and modulation of the spoken text.
+
+# 104 heading
+  306 en heading | Amazon.
+
+# 105 paragraph
+  307 en | Used in Alexa and as Software as a Service in AWS (from 2017).
+
+# 106 heading
+  308 en heading | AmigaOS.
+
+# 107 paragraph
+  309 en | Example of speech synthesis with the included Say utility in Workbench 1.3
+
+# 108 paragraph
+  310 en | The second operating system to feature advanced speech synthesis capabilities was AmigaOS, introduced in 1985.
+  311 en | The voice synthesis was licensed by Commodore International from SoftVoice, Inc., who also developed the original MacinTalk text-to-speech system.
+  312 en | It featured a complete system of voice emulation for American English, with both male and female voices and "stress" indicator markers, made possible through the Amiga 's audio chipset.
+  313 en | The synthesis system was divided into a translator library which converted unrestricted English text into a standard set of phonetic codes and a narrator device which implemented a formant model of speech generation.
+  314 en | AmigaOS also featured a high-level " Speak Handler ", which allowed command-line users to redirect text output to speech.
+  315 en | Speech synthesis was occasionally used in third-party programs, particularly word processors and educational software.
+  316 en | The synthesis software remained largely unchanged from the first AmigaOS release and Commodore eventually removed speech synthesis support from AmigaOS 2.1 onward.
+
+# 109 paragraph
+  317 en | Despite the American English phoneme limitation, an unofficial version with multilingual speech synthesis was developed.
+  318 en | This made use of an enhanced version of the translator library which could translate a number of languages, given a set of rules for each language.
+
+# 110 heading
+  319 en heading | Microsoft Windows.
+
+# 111 paragraph
+  320 en | Modern Windows desktop systems can use SAPI 4 and SAPI 5 components to support speech synthesis and speech recognition.
+  321 en | SAPI 4.0 was available as an optional add-on for Windows 95 and Windows 98.
+  322 en | Windows 2000 added Narrator, a text-to-speech utility for people who have visual impairment.
+  323 en | Third-party programs such as JAWS for Windows, Window-Eyes, Non-visual Desktop Access,
+  324 en | Supernova and System Access can perform various text-to-speech tasks such as reading text aloud from a specified website, email account, text document, the Windows clipboard, the user's keyboard typing, etc.
+  325 en | Not all programs can use speech synthesis directly.
+  326 en | Some programs can use plug-ins, extensions or add-ons to read text aloud.
+  327 en | Third-party programs are available that can read text from the system clipboard.
+
+# 112 paragraph
+  328 en | Microsoft Speech Server is a server-based package for voice synthesis and recognition.
+  329 en | It is designed for network use with web applications and call centers.
+
+# 113 heading
+  330 en heading | Votrax.
+
+# 114 paragraph
+  331 en | Votrax Type 'N Talk speech synthesizer (1980)
+
+# 115 paragraph
+  332 en | From 1971 to 1996, Votrax produced a number of commercial speech synthesizer components.
+  333 en | A Votrax synthesizer was included in the first generation Kurzweil Reading Machine for the Blind.
+
+# 116 heading
+  334 en heading | Text-to-speech systems.
+
+# 117 paragraph
+  335 en | Text-to-speech (TTS) refers to the ability of computers to read text aloud.
+  336 en | A TTS engine converts written text to a phonemic representation, then converts the phonemic representation to waveforms that can be output as sound.
+  337 en | TTS engines with different languages, dialects and specialized vocabularies are available through third-party publishers.
+
+# 118 heading
+  338 en heading | Android.
+
+# 119 paragraph
+  339 en | Version 1.6 of Android added support for speech synthesis (TTS).
+
+# 120 heading
+  340 en heading | Internet.
+
+# 121 paragraph
+  341 en | Currently, there are a number of applications, plugins and gadgets that can read messages directly from an e-mail client and web pages from a web browser or Google Toolbar.
+  342 en | Some specialized software can narrate RSS-feeds.
+  343 en | On one hand, online RSS-narrators simplify information delivery by allowing users to listen to their favourite news sources and to convert them to podcasts.
+  344 en | On the other hand, on-line RSS-readers are available on almost any personal computer connected to the Internet.
+  345 en | Users can download generated audio files to portable devices, e.g. with a help of podcast receiver, and listen to them while walking, jogging or commuting to work.
+
+# 122 paragraph
+  346 en | A growing field in Internet based TTS is web-based assistive technology, e.g. 'Browsealoud' from a UK company and Readspeaker.
+  347 en | It can deliver TTS functionality to anyone (for reasons of accessibility, convenience, entertainment or information) with access to a web browser.
+  348 en | The non-profit project Pediaphon was created in 2006 to provide a similar web-based TTS interface to the Wikipedia.
+
+# 123 paragraph
+  349 en | Other work is being done in the context of the W3C through the W3C Audio Incubator Group with the involvement of The BBC and Google Inc.
+
+# 124 heading
+  350 en heading | Open source.
+
+# 125 paragraph
+  351 en | Some open-source software systems are available, such as:
+
+# 126 listItem
+  352 en | eSpeak which supports a broad range of languages.
+
+# 127 listItem
+  353 en | Festival Speech Synthesis System which uses diphone-based synthesis, as well as more modern and contemporary sounding techniques.
+
+# 128 listItem
+  354 en | gnuspeech which uses articulatory synthesis from the Free Software Foundation.
+
+# 129 heading
+  355 en heading | Others.
+
+# 130 listItem
+  356 en | Following the commercial failure of the hardware-based Intellivoice, gaming developers sparingly used software synthesis in later games.
+  357 en | Earlier systems from Atari, such as the Atari 5200 (Baseball) and the Atari 2600 (Quadrun and Open Sesame), also had games utilizing software synthesis.
+
+# 131 listItem
+  358 en | Some e-book readers, such as the Amazon Kindle, Samsung E6, PocketBook eReader Pro, enTourage eDGe, and the Bebook Neo.
+
+# 132 listItem
+  359 en | The BBC Micro incorporated the Texas Instruments TMS5220 speech synthesis chip.
+
+# 133 listItem
+  360 en | Some models of Texas Instruments home computers produced in 1979 and 1981 (Texas Instruments TI-99/4 and TI-99/4A) were capable of
+  361 en | text-to-phoneme synthesis or reciting complete words and phrases (text-to-dictionary), using a very popular Speech Synthesizer peripheral.
+  362 en | TI used a proprietary codec to embed complete spoken phrases into applications, primarily video games.
+
+# 134 listItem
+  363 en | IBM 's OS/2 Warp 4 included VoiceType, a precursor to IBM ViaVoice.
+
+# 135 listItem
+  364 en | GPS Navigation units produced by Garmin, Magellan, TomTom and others use speech synthesis for automobile navigation.
+
+# 136 listItem
+  365 en | Yamaha produced a music synthesizer in 1999, the Yamaha FS1R which included a Formant synthesis capability.
+  366 en | Sequences of up to 512 individual vowel and consonant formants could be stored and replayed, allowing short vocal phrases to be synthesized.
+
+# 137 heading
+  367 en heading | Digital sound-alikes.
+
+# 138 paragraph
+  368 en | At the 2018 Conference on Neural Information Processing Systems (NeurIPS) researchers from Google presented the work 'Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech Synthesis',
+  369 en | which transfers learning from speaker verification to achieve text-to-speech synthesis, that can be made to sound almost like anybody from a speech sample of only 5 seconds.
+
+# 139 paragraph
+  370 en | Also researchers from Baidu Research presented a voice cloning system with similar aims at the 2018 NeurIPS conference, though the result is rather unconvincing.
+
+# 140 paragraph
+  371 en | By 2019 the digital sound-alikes found their way to the hands of criminals as Symantec researchers know of 3 cases where digital sound-alikes technology has been used for crime.
+
+# 141 paragraph
+  372 en | This increases the stress on the disinformation situation coupled with the facts that
+
+# 142 listItem
+  373 en | Human image synthesis since the early 2000s has improved beyond the point of human's inability to tell a real human imaged with a real camera from a simulation of a human imaged with a simulation of a camera.
+
+# 143 listItem
+  374 en | 2D video forgery techniques were presented in 2016 that allow near real-time counterfeiting of facial expressions in existing 2D video.
+
+# 144 listItem
+  375 en | In SIGGRAPH 2017 an audio driven digital look-alike of upper torso of Barack Obama was presented by researchers from University of Washington.
+  376 en | It was driven only by a voice track as source data for the animation after the training phase to acquire lip
+  377 en | sync and wider facial information from training material consisting of 2D videos with audio had been completed.
+
+# 145 heading
+  378 en heading | Speech synthesis markup languages.
+
+# 146 paragraph
+  379 en | A number of markup languages have been established for the rendition of text as speech in an XML -compliant format.
+  380 en | The most recent is Speech Synthesis Markup Language (SSML), which became a W3C recommendation in 2004.
+  381 en | Older speech synthesis markup languages include Java Speech Markup Language (JSML) and SABLE.
+  382 en | Although each of these was proposed as a standard, none of them have been widely adopted.
+
+# 147 paragraph
+  383 en | Speech synthesis markup languages are distinguished from dialogue markup languages.
+  384 en | VoiceXML, for example, includes tags related to speech recognition, dialogue management and touchtone dialing, in addition to text-to-speech markup.
+
+# 148 heading
+  385 en heading | Applications.
+
+# 149 paragraph
+  386 en | Speech synthesis has long been a vital assistive technology tool and its application in this area is significant and widespread.
+  387 en | It allows environmental barriers to be removed for people with a wide range of disabilities.
+  388 en | The longest application has been in the use of screen readers for people with visual impairment,
+  389 en | but text-to-speech systems are now commonly used by people with dyslexia and other reading disabilities as well as by pre-literate children.
+  390 en | They are also frequently employed to aid those with severe speech impairment usually through a dedicated voice output communication aid.
+  391 en | Work to personalize a synthetic voice to better match a person's personality or historical voice is becoming available.
+  392 en | A noted application, of speech synthesis, was the Kurzweil Reading Machine for the Blind which incorporated text-to-phonetics software based on work from Haskins Laboratories and a black-box synthesizer built by Votrax.
+
+# 150 paragraph
+  393 en | Stephen Hawking was one of the most famous people to use a speech computer to communicate.
+
+# 151 paragraph
+  394 en | White House Millennium Lecture Series - -2 - Stephen Hawking
+
+# 152 paragraph
+  395 en | Speech synthesis techniques are also used in entertainment productions such as games and animations.
+  396 en | In 2007, Animo Limited announced the development of a software application package based on its speech synthesis software FineSpeech,
+  397 en | explicitly geared towards customers in the entertainment industries, able to generate narration and lines of dialogue according to user specifications.
+  398 en | The application reached maturity in 2008, when NEC Biglobe announced a web service that allows users to create
+  399 en | phrases from the voices of characters from the Japanese anime series Code Geass: Lelouch of the Rebellion R2.
+  400 en | 15.ai has been frequently used for content creation in various fandoms, including the My Little Pony: Friendship Is Magic fandom, the Team Fortress 2 fandom, the Portal fandom, and the SpongeBob SquarePants fandom.
+
+# 153 paragraph
+  401 en | Text-to-speech for disability and impaired communication aids have become widely available.
+  402 en | Text-to-speech is also finding new applications; for example, speech synthesis combined with speech recognition allows for interaction with mobile devices via natural language processing interfaces.
+  403 en | Some users have also created AI virtual assistants using 15.ai and external voice control software.
+
+# 154 paragraph
+  404 en | Text-to-speech is also used in second language acquisition.
+  405 en | Voki, for instance, is an educational tool created by Oddcast that allows users to create their own talking avatar, using different accents.
+  406 en | They can be emailed, embedded on websites or shared on social media.
+
+# 155 paragraph
+  407 en | Content creators have used voice cloning tools to recreate their voices for podcasts, narration, and comedy shows.
+  408 en | Publishers and authors have also used such software to narrate audiobooks and newsletters.
+  409 en | Another area of application is AI video creation with talking heads.
+  410 en | Webapps and video editors like Elai.io or Synthesia allow users to create video content involving AI avatars, who are made to speak using text-to-speech technology.
+
+# 156 paragraph
+  411 en | Speech synthesis is a valuable computational aid for the analysis and assessment of speech disorders.
+  412 en | A voice quality synthesizer, developed by Jorge C. Lucero et al. at the University of Brasília,
+  413 en | simulates the physics of phonation and includes models of vocal frequency jitter and tremor, airflow noise and laryngeal asymmetries.
+  414 en | The synthesizer has been used to mimic the timbre of dysphonic speakers with controlled levels of roughness, breathiness and strain.
+
+# 157 heading
+  415 en heading | Singing synthesis.
+
+# 158 paragraph
+  416 en | "Encore" by Jamie Paige, showcasing both her own live vocals and synthesized vocals by the Vocaloid voice bank Gumi
+
+# 159 paragraph
+  417 en | "When Spring Comes" (2022) by Jamie Paige featuring vocals from the Synthesizer V AI voice bank ANRI, an example of artificial intelligence's applications in singing synthesis.
+
+# 160 paragraph
+  418 en | In the 2010s, singing synthesis technology took advantage of the advances in artificial intelligence, deep listening and machine learning, to better represent the nuances of the human voice.
+  419 en | New high-fidelity sample libraries combined with digital audio workstations facilitate editing in fine detail, such as shifting of formants, adjustment of vibrato, and adjustments to vowels and consonants.
+  420 en | Sample libraries for various languages and various accents are available.
+  421 en | With advancements in vocal synthesis, artists sometimes use sample libraries in lieu of backing singers.

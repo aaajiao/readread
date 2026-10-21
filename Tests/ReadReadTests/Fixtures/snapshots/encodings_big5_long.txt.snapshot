@@ -1,0 +1,17 @@
+title: big5_long
+source: big5_long.txt
+language: zh
+blocks: 4, units: 5
+
+# 0 paragraph
+  0 zh | 第一章　風起
+
+# 1 paragraph
+  1 zh | 天色漸暗，城門外的老槐樹下站著一個少年。
+
+# 2 paragraph
+  2 zh | 第二章　夜行
+
+# 3 paragraph
+  3 zh | 夜色如墨，林風沿著山路一直向北走去。
+  4 zh | 他沒有回頭，因為他知道，身後的城門已經關上了。
