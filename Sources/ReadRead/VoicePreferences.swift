@@ -13,7 +13,8 @@ protocol PreferencesStore: AnyObject {
 extension UserDefaults: PreferencesStore {}
 
 /// A voice per language (`voice_zh`, `voice_en`), a speed per document language
-/// (`speed_zh`, `speed_en`), plus the last document language (to prewarm the right model).
+/// (`speed_zh`, `speed_en`), the last document language (to prewarm the right model) and the
+/// engine (`engine`). The voices are Kokoro's: Qwen3-TTS has one voice per language and stores none.
 @MainActor
 struct VoicePreferences {
     /// Languages v0.1.x had and this version dropped.
@@ -68,8 +69,9 @@ struct VoicePreferences {
     }
 
     /// The voice is stored under its own language, so it can never land under
-    /// the wrong key.
+    /// the wrong key. Only Kokoro's voices are stored (Qwen's come with the engine).
     func saveVoice(_ voice: Voice) {
+        guard Voice.voice(id: voice.id, language: voice.language) != nil else { return }
         defaults.set(voice.id, forKey: Self.voiceKey(voice.language))
     }
 
@@ -81,6 +83,18 @@ struct VoicePreferences {
     var lastLanguage: SpeechLanguage? {
         get { defaults.string(forKey: Self.lastLanguageKey).flatMap(SpeechLanguage.init(rawValue:)) }
         nonmutating set { defaults.set(newValue?.rawValue, forKey: Self.lastLanguageKey) }
+    }
+
+    /// The engine chosen in Settings; nil (never chosen, an unknown value, or reset) is Kokoro.
+    var engine: EngineKind? {
+        get { defaults.string(forKey: EngineKind.defaultsKey).flatMap(EngineKind.init(rawValue:)) }
+        nonmutating set {
+            if let newValue {
+                defaults.set(newValue.rawValue, forKey: EngineKind.defaultsKey)
+            } else {
+                defaults.removeObject(forKey: EngineKind.defaultsKey)
+            }
+        }
     }
 
     private func storedSpeed(forKey key: String) -> Double? {

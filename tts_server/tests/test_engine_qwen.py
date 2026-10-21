@@ -319,7 +319,7 @@ def test_a_route_loads_on_demand(engine, backend):
 def test_a_failed_load_is_raised_and_tried_again(tmp_path, monkeypatch):
     monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
     backend = FakeBackend(fail_loads=1)
-    engine = engine_qwen.Engine(str(tmp_path), "0.6b", str(tmp_path / "cache"), backend=backend)
+    engine = engine_qwen.Engine(str(tmp_path), "1.7b", str(tmp_path / "cache"), backend=backend)
     with pytest.raises(RuntimeError, match="load failed"):
         engine.load("zh")
     assert engine.loaded() == []
@@ -373,9 +373,9 @@ def test_check_models(tmp_path):
     assert engine_qwen.check_models(models, "1.7b") == []
     assert engine_qwen.check_models(str(tmp_path / "nowhere"), "1.7b") == [
         f"models directory not found: {tmp_path / 'nowhere'} (run ./scripts/install-hq.sh)"]
-    folder = tmp_path / "models" / MODELS["0.6b"]
-    assert engine_qwen.check_models(models, "0.6b") == [
-        f"model folder not found: {folder} (run ./scripts/install-hq.sh --model 0.6b)"]
+    (tmp_path / "empty").mkdir()
+    assert engine_qwen.check_models(str(tmp_path / "empty"), "1.7b") == [
+        f"model folder not found: {tmp_path / 'empty' / MODELS['1.7b']} (run ./scripts/install-hq.sh)"]
     weights = tmp_path / "models" / MODELS["1.7b"] / "model.safetensors"
     with open(weights, "wb") as f:
         f.truncate(100)
@@ -383,7 +383,7 @@ def test_check_models(tmp_path):
     problems = engine_qwen.check_models(models, "1.7b")
     assert problems[0] == f"{weights} is 100 bytes, expected 2393308931"
     assert problems[1].startswith("missing model file ") and problems[1].endswith(
-        "vocab.json (re-run ./scripts/install-hq.sh --model 1.7b)")
+        "vocab.json (re-run ./scripts/install-hq.sh)")
 
 
 def versions_sh() -> dict[str, str]:
@@ -394,7 +394,10 @@ def versions_sh() -> dict[str, str]:
 
 def test_the_engine_agrees_with_the_pins_in_versions_sh():
     pins = versions_sh()
-    assert pins["RR_HQ_MODELS"].split() == list(QWEN_MODELS) and pins["RR_HQ_DEFAULT_MODEL"] == QWEN_MODELS[0]
+    assert pins["RR_HQ_MODELS"].split() == list(QWEN_MODELS) == list(MODELS) == ["1.7b"]  # one model, the default
+    # No pins of another model are left (versions.sh once pinned a second one).
+    assert {name for name in pins if name.endswith("_REPO")} == {"RR_HQ_1_7B_REPO"}
+    assert "RR_HQ_DEFAULT_MODEL" not in pins
     for model in QWEN_MODELS:
         key = model.replace(".", "_").upper()
         assert pins[f"RR_HQ_{key}_REPO"] == f"mlx-community/{MODELS[model]}"
@@ -434,3 +437,23 @@ def test_engine_logs_go_to_the_engine_logger(engine, caplog):
     caplog.set_level(logging.INFO, logger="readread.engine")
     engine.load("zh")
     assert "route zh ready in" in caplog.text and "model 1.7b loaded from" in caplog.text
+
+
+def test_only_the_expected_config_warning_of_transformers_is_dropped():
+    # transformers 5.x logs it on every load of the model (the real run's log line starts with "[transformers]"); it is
+    # expected and would otherwise sit in the log tail of every Qwen crash message.
+    engine_qwen.quiet_expected_warnings()
+    engine_qwen.quiet_expected_warnings()
+    logger = logging.getLogger("transformers.configuration_utils")
+    assert logger.filters.count(engine_qwen._DROP_EXPECTED_CONFIG_WARNING) == 1, "added once"
+
+    def passes(message: str) -> bool:
+        return bool(logger.filter(logger.makeRecord(logger.name, logging.WARNING, __file__, 1, message, None, None)))
+
+    assert not passes(engine_qwen.EXPECTED_CONFIG_WARNING + " This may be expected if you are loading a checkpoint "
+                      "that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into "
+                      "`Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the "
+                      "checkpoint is compatible with the model you are instantiating.")
+    assert passes("You are using a model of type `qwen3_tts` to instantiate a model of type `llama`. This may be "
+                  "expected ...")
+    assert passes("Could not locate the tokenizer configuration file")

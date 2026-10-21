@@ -27,6 +27,18 @@ final class VoiceGroupTests: XCTestCase {
         }
     }
 
+    /// v0.5.0: Qwen3-TTS's catalog, one voice per language.
+    func testQwenHasOneVoicePerLanguage() {
+        let zh = VoiceGroup.groups(for: .zh, in: Voice.catalog(for: .qwen))
+        XCTAssertEqual(zh.map(\.title), ["中文"])
+        XCTAssertEqual(zh.flatMap(\.voices).map(\.id), ["serena"])
+        let en = VoiceGroup.groups(for: .en, in: Voice.catalog(for: .qwen))
+        XCTAssertEqual(en.map(\.title), ["English (US)"])
+        XCTAssertEqual(en.flatMap(\.voices).map(\.id), ["aiden"])
+        XCTAssertEqual(Voice.voices(for: .zh, in: Voice.catalog(for: .kokoro)), Voice.voices(for: .zh))
+        XCTAssertNil(Voice.voice(id: "serena"), "Kokoro's lookups never find Qwen's voices")
+    }
+
     func testLanguageNamesStayInTheirOwnLanguage() {
         XCTAssertEqual(VoiceAccent.languageName(.zh), "中文")
         XCTAssertEqual(VoiceAccent.languageName(.en), "English")

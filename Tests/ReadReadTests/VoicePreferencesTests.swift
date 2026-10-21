@@ -104,4 +104,27 @@ final class VoicePreferencesTests: XCTestCase {
         store.set("ja", forKey: "last_language")
         XCTAssertNil(prefs.lastLanguage)
     }
+
+    // MARK: - v0.5.0: the engine
+
+    func testTheEngineRoundTripsAndResets() {
+        XCTAssertNil(prefs.engine, "never chosen: Kokoro")
+        prefs.engine = .qwen
+        XCTAssertEqual(store.string(forKey: "engine"), "qwen")
+        XCTAssertEqual(prefs.engine, .qwen)
+        prefs.engine = .kokoro
+        XCTAssertEqual(store.string(forKey: "engine"), "kokoro")
+        prefs.engine = nil
+        XCTAssertNil(store.object(forKey: "engine"), "reset: the key goes")
+        store.set("piper", forKey: "engine")
+        XCTAssertNil(prefs.engine, "an unknown engine is Kokoro")
+    }
+
+    func testQwensVoicesAreNeverStored() {
+        for voice in Voice.qwen { prefs.saveVoice(voice) }
+        XCTAssertNil(store.object(forKey: "voice_zh"))
+        XCTAssertNil(store.object(forKey: "voice_en"))
+        XCTAssertEqual(prefs.voice(for: .zh), Voice.defaultVoice(for: .zh))
+        XCTAssertEqual(prefs.voice(for: .en), Voice.defaultVoice(for: .en))
+    }
 }

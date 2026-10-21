@@ -272,6 +272,42 @@ final class TTSServerProcessTests: XCTestCase {
         XCTAssertEqual(h.server.recentCrashCount(), 0)
     }
 
+    /// The engine chosen again in Settings: a give-up or a FATAL is forgotten and the next request
+    /// starts a fresh server, without the backoff of past crashes; a running server is left alone.
+    func testResetFailureMakesTheNextRequestAFreshAttempt() async throws {
+        let h = ServerHarness()
+        h.launcher.script = { $0.emitReady() }
+        for _ in 0..<3 {
+            _ = try await h.server.ensureRunning()
+            h.launcher.last?.exit(code: 1)
+            h.clock.advance(10)
+        }
+        XCTAssertEqual(h.server.phase, .failed)
+        h.server.resetFailure()
+        XCTAssertEqual(h.server.phase, .stopped)
+        XCTAssertNil(h.server.lastError)
+        XCTAssertEqual(h.server.recentCrashCount(), 0)
+        _ = try await h.server.ensureRunning()
+        XCTAssertEqual(h.launcher.processes.count, 4)
+
+        h.server.resetFailure()
+        XCTAssertEqual(h.server.phase, .ready, "a running server is left as it is")
+        XCTAssertTrue(try XCTUnwrap(h.launcher.last).isRunning)
+
+        h.launcher.last?.exit(code: 1)
+        h.launcher.script = { process in
+            process.emit("FATAL {\"message\":\"model file missing: kokoro-v1.0.fp16.onnx\"}\n")
+            process.exit(code: 3)
+        }
+        h.sleeper.set(.immediate, for: .seconds(1))
+        _ = try? await h.server.ensureRunning()
+        XCTAssertEqual(h.server.phase, .failed)
+        h.server.resetFailure()
+        h.launcher.script = { $0.emitReady() }
+        _ = try await h.server.ensureRunning()
+        XCTAssertEqual(h.launcher.processes.count, 6)
+    }
+
     func testCrashesOutsideTheWindowDoNotAccumulate() async throws {
         let h = ServerHarness()
         h.launcher.script = { $0.emitReady() }
@@ -362,6 +398,41 @@ final class TTSServerProcessTests: XCTestCase {
         XCTAssertTrue(h.sleeper.calls.contains(.seconds(2)))
         XCTAssertEqual(h.server.lastExit?.exit, ProcessExit(reason: .signal, code: 9))
         XCTAssertEqual(h.server.phase, .stopped)
+    }
+
+    /// A server stop() is waiting for still counts as running, and a second stop() meanwhile (an
+    /// installer run after an engine switch) returns only once it has exited.
+    func testAStoppingServerStaysTrackedUntilItHasExited() async throws {
+        let h = ServerHarness()
+        h.launcher.script = { process in
+            process.exitsOnTerminate = false
+            process.emitReady()
+        }
+        h.sleeper.set(.gated, for: .seconds(2))
+        _ = try await h.server.ensureRunning()
+        let process = try XCTUnwrap(h.launcher.last)
+
+        let first = Task { await h.server.stop() }
+        await waitUntil { process.terminateCount == 1 && h.sleeper.waiting(for: .seconds(2)) == 1 }
+        XCTAssertEqual(h.server.phase, .stopped)
+        XCTAssertTrue(h.server.isProcessRunning, "it has not exited yet")
+
+        let secondReturned = StopFlag()
+        let second = Task {
+            await h.server.stop()
+            secondReturned.isSet = true
+        }
+        await waitUntil { process.terminateCount == 2 }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertFalse(secondReturned.isSet, "the second stop() waits for the same exit")
+
+        process.exit(code: 0)
+        await first.value
+        await second.value
+        XCTAssertTrue(secondReturned.isSet)
+        XCTAssertFalse(h.server.isProcessRunning)
+        XCTAssertEqual(process.killCount, 0)
+        h.sleeper.release(.seconds(2))
     }
 
     func testStopDuringStartupCancelsWaiters() async {
@@ -552,5 +623,288 @@ final class TTSServerProcessTests: XCTestCase {
         h.launcher.last?.exit(code: 1)
         await h.server.recoverFromConnectionFailure(endpoint, error: .connectionFailed("refused"))
         XCTAssertEqual(h.server.recentCrashCount(), 1)
+    }
+
+    // MARK: - Flavors: Kokoro's READY, the Qwen server
+
+    func testKokoroIsTheDefaultFlavorWithItsPolicyAndLog() {
+        let h = ServerHarness()
+        XCTAssertEqual(h.server.flavor, .kokoro)
+        XCTAssertEqual(h.server.policy.startTimeout, .seconds(90))
+        XCTAssertEqual(h.server.policy.idleTimeout, 15 * 60)
+        XCTAssertEqual(h.server.policy.idleCheckInterval, .seconds(60))
+        XCTAssertEqual(h.server.logPath, "/logs/tts-server.log")
+    }
+
+    func testKokoroAcceptsAReadyLineThatNamesKokoroOrNoEngine() async throws {
+        for line in [#""engine":"kokoro""#, #""engine":"kokoro","model":null"#] {
+            let h = ServerHarness()
+            h.launcher.script = { $0.emit("READY {\"port\":40001,\"pid\":\($0.pid),\"api\":2,\"loaded\":[],\(line)}\n") }
+            let endpoint = try await h.server.ensureRunning()
+            XCTAssertEqual(endpoint.engine, "kokoro")
+            XCTAssertNil(endpoint.model)
+        }
+        let h = ServerHarness()
+        h.launcher.script = { $0.emitReady() }  // a server older than the field
+        let endpoint = try await h.server.ensureRunning()
+        XCTAssertNil(endpoint.engine)
+        XCTAssertEqual(h.server.phase, .ready)
+    }
+
+    func testKokoroRefusesAQwenServer() async {
+        let h = ServerHarness()
+        h.launcher.script = { QwenHarness.emitReady($0) }
+        do {
+            _ = try await h.server.ensureRunning()
+            XCTFail("expected a protocol error")
+        } catch {
+            XCTAssertEqual(error as? TTSError,
+                           .protocolError("READY reports engine qwen, model 1.7b; ReadRead started engine kokoro"))
+        }
+        let process = h.launcher.last
+        await waitUntil { process?.terminateCount == 1 }
+        XCTAssertEqual(h.server.phase, .failed)
+    }
+
+    func testQwenLaunchUsesTheHQVenvWithKokorosCleanEnvironment() async throws {
+        let kokoro = ServerHarness()
+        kokoro.launcher.script = { $0.emitReady() }
+        _ = try await kokoro.server.ensureRunning(preload: [.zh, .en])
+        let q = QwenHarness()
+        q.launcher.script = { QwenHarness.emitReady($0) }
+
+        let endpoint = try await q.server.ensureRunning(preload: [.en, .zh])
+
+        let process = try XCTUnwrap(q.launcher.last)
+        XCTAssertEqual(process.configuration.executable, "/hq/venv/bin/python3")
+        XCTAssertEqual(process.configuration.arguments, [
+            "-I", "-B", "/rr/tts_server/tts_server.py", "--engine", "qwen", "--model", "1.7b",
+            "--models-dir", "/hq/models", "--preload", "zh,en",
+        ])
+        var environment = process.configuration.environment
+        var kokoroEnvironment = try XCTUnwrap(kokoro.launcher.last).configuration.environment
+        XCTAssertEqual(environment.removeValue(forKey: "READREAD_TOKEN")?.count, 64)
+        kokoroEnvironment.removeValue(forKey: "READREAD_TOKEN")
+        XCTAssertEqual(environment, kokoroEnvironment, "the same clean environment as Kokoro")
+        XCTAssertNil(process.configuration.currentDirectory)
+        XCTAssertEqual(q.fs.opened, ["/logs/tts-server-qwen.log"], "its own log")
+        XCTAssertEqual(q.server.resolvedPaths?.source, .dev)
+        XCTAssertEqual(endpoint.engine, "qwen")
+        XCTAssertEqual(endpoint.model, "1.7b")
+        XCTAssertEqual(endpoint.loaded, ["zh", "en"])
+        XCTAssertEqual(q.server.phase, .ready)
+    }
+
+    func testQwenRunsTheBundlesServerCodeWhenThereIsOne() async throws {
+        let q = QwenHarness(bundleResources: "/App/ReadRead.app/Contents/Resources")
+        q.fs.addFile("/App/ReadRead.app/Contents/Resources/tts_server/tts_server.py")
+        q.launcher.script = { QwenHarness.emitReady($0) }
+        _ = try await q.server.ensureRunning()
+        let process = try XCTUnwrap(q.launcher.last)
+        XCTAssertEqual(process.configuration.executable, "/hq/venv/bin/python3")
+        XCTAssertEqual(process.configuration.arguments[2], "/App/ReadRead.app/Contents/Resources/tts_server/tts_server.py")
+        XCTAssertEqual(q.server.resolvedPaths?.source, .bundle)
+    }
+
+    func testQwenReadyMustNameQwenAndTheModel() async {
+        let cases: [(String, String)] = [
+            ("", "READY reports engine none, model none; ReadRead started engine qwen, model 1.7b"),
+            (#","engine":"kokoro""#, "READY reports engine kokoro, model none; ReadRead started engine qwen, model 1.7b"),
+            (#","engine":"qwen""#, "READY reports engine qwen, model none; ReadRead started engine qwen, model 1.7b"),
+            (#","engine":"qwen","model":"3b""#, "READY reports engine qwen, model 3b; ReadRead started engine qwen, model 1.7b"),
+        ]
+        for (fields, message) in cases {
+            let q = QwenHarness()
+            q.launcher.script = { $0.emit("READY {\"port\":40002,\"pid\":\($0.pid),\"api\":2,\"loaded\":[\"zh\"]\(fields)}\n") }
+            do {
+                _ = try await q.server.ensureRunning()
+                XCTFail("expected a protocol error for \(fields)")
+            } catch {
+                XCTAssertEqual(error as? TTSError, .protocolError(message))
+            }
+            let process = q.launcher.last
+            await waitUntil { process?.terminateCount == 1 }
+            XCTAssertEqual(q.server.phase, .failed, "a startup failure: no retries")
+            XCTAssertEqual(q.server.recentCrashCount(), 0)
+        }
+    }
+
+    func testQwenPolicyWaitsLongerToStartAndStopsSoonerWhenIdle() {
+        let q = QwenHarness()
+        XCTAssertEqual(q.server.policy.startTimeout, .seconds(180))
+        XCTAssertEqual(q.server.policy.idleTimeout, 5 * 60)
+        XCTAssertEqual(q.server.policy.idleCheckInterval, .seconds(30))
+        let kokoro = ServerPolicy()
+        XCTAssertEqual(q.server.policy.stopGracePeriod, kokoro.stopGracePeriod)
+        XCTAssertEqual(q.server.policy.crashWindow, kokoro.crashWindow)
+        XCTAssertEqual(q.server.policy.maxCrashesInWindow, kokoro.maxCrashesInWindow)
+        XCTAssertEqual((0...3).map(q.server.policy.backoff(afterCrashes:)), (0...3).map(kokoro.backoff(afterCrashes:)))
+        XCTAssertEqual(q.server.logPath, "/logs/tts-server-qwen.log")
+    }
+
+    func testQwenStartTimesOutAfter180Seconds() async {
+        let q = QwenHarness()
+        q.sleeper.set(.immediate, for: .seconds(180))
+        do {
+            _ = try await q.server.ensureRunning()
+            XCTFail("expected a timeout")
+        } catch {
+            XCTAssertEqual(error as? TTSError, .startTimeout(seconds: 180))
+        }
+        XCTAssertFalse(q.sleeper.calls.contains(.seconds(90)), "not Kokoro's timeout")
+        let process = q.launcher.last
+        await waitUntil { process?.terminateCount == 1 }
+        XCTAssertEqual(q.server.phase, .crashed)
+    }
+
+    func testQwenExitsAfterFiveIdleMinutesCheckedEveryThirtySeconds() async throws {
+        let q = QwenHarness()
+        q.launcher.script = { QwenHarness.emitReady($0) }
+        _ = try await q.server.ensureRunning()
+        let process = try XCTUnwrap(q.launcher.last)
+        await waitUntil { q.sleeper.calls.contains(.seconds(30)) }
+
+        q.clock.advance(4 * 60 + 59)
+        await q.server.checkIdle()
+        XCTAssertEqual(q.server.phase, .ready)
+
+        q.server.setPlaybackActive(true)
+        q.clock.advance(60 * 60)
+        await q.server.checkIdle()
+        XCTAssertEqual(q.server.phase, .ready, "never while audio plays")
+        q.server.setPlaybackActive(false)
+
+        q.clock.advance(5 * 60)
+        await q.server.checkIdle()
+        XCTAssertEqual(q.server.phase, .stopped)
+        XCTAssertEqual(process.terminateCount, 1)
+        XCTAssertTrue(process.stdinClosed)
+        XCTAssertEqual(q.server.recentCrashCount(), 0)
+
+        _ = try await q.server.ensureRunning()
+        XCTAssertEqual(q.launcher.processes.count, 2, "the next request starts it again")
+    }
+
+    func testQwenCrashRestartsLazilyWithBackoffAndItsOwnLogTail() async throws {
+        let q = QwenHarness()
+        q.launcher.script = { QwenHarness.emitReady($0) }
+        q.sleeper.set(.immediate, for: .seconds(1))
+        _ = try await q.server.ensureRunning()
+
+        q.launcher.last?.exit(code: 6, signal: true)
+        XCTAssertEqual(q.server.phase, .crashed)
+        // The last lines of tts-server-qwen.log, never Kokoro's tts-server.log ("ValueError: boom").
+        XCTAssertEqual(q.server.lastError, .crashed(status: -6, detail: "loading the model\nRuntimeError: [metal] out of memory"))
+
+        _ = try await q.server.ensureRunning()
+        XCTAssertEqual(q.launcher.processes.count, 2)
+        XCTAssertTrue(q.sleeper.calls.contains(.seconds(1)), "backoff before relaunch: \(q.sleeper.calls)")
+    }
+
+    func testAMissingOrBrokenHQInstallIsHqUnavailableWithoutALaunch() async {
+        let noPython = QwenHarness(venv: false)
+        let noModel = QwenHarness(model: false)
+        for (q, needle) in [(noPython, "/hq/venv/bin/python3"), (noModel, "/hq/models/" + QwenModel.folder)] {
+            do {
+                _ = try await q.server.ensureRunning()
+                XCTFail("expected hqUnavailable")
+            } catch {
+                guard case .hqUnavailable(let detail)? = error as? TTSError else { return XCTFail("\(error)") }
+                XCTAssertTrue(detail.contains(needle), detail)
+                let tts = error as? TTSError
+                XCTAssertEqual(tts?.isServerFailure, true)
+                XCTAssertEqual(tts?.isResourcesMissing, false, "the Kokoro setup hint never shows for Qwen")
+                XCTAssertTrue(tts?.errorDescription?.contains("Settings › Advanced › High-quality mode") == true)
+            }
+            XCTAssertTrue(q.launcher.processes.isEmpty)
+            XCTAssertEqual(q.server.phase, .failed)
+        }
+    }
+
+    /// A Qwen FATAL before READY (a package or a model file the install lacks) is hqUnavailable: the
+    /// server's message as it is, plus where to repair it. Kokoro's stays serverFatal.
+    func testAQwenFatalIsHqUnavailableWithTheServersMessage() async {
+        let q = QwenHarness()
+        let message = "missing Python packages: numpy (run ./scripts/install-hq.sh)"
+        q.launcher.script = { process in
+            process.emit("FATAL {\"message\":\"\(message)\"}\n")
+            process.exit(code: 3)
+        }
+        do {
+            _ = try await q.server.ensureRunning()
+            XCTFail("expected hqUnavailable")
+        } catch {
+            let tts = error as? TTSError
+            XCTAssertEqual(tts, .hqUnavailable(message))
+            XCTAssertEqual(tts?.errorDescription, "The high-quality engine cannot start: \(message)\n"
+                + "Repair it in Settings › Advanced › High-quality mode.")
+            XCTAssertEqual(tts?.isResourcesMissing, false)
+        }
+        XCTAssertEqual(q.server.phase, .failed)
+        XCTAssertEqual(q.server.recentCrashCount(), 0, "a reported FATAL is not a crash")
+        XCTAssertEqual(q.server.lastError, .hqUnavailable(message))
+        XCTAssertEqual(ServerFlavor.kokoro.startupFatal("boom"), .serverFatal("boom"))
+    }
+
+    func testQwenWithoutServerCodeFailsToLaunchButNeverAsMissingKokoroFiles() async {
+        let q = QwenHarness(serverCode: false)
+        do {
+            _ = try await q.server.ensureRunning()
+            XCTFail("expected launchFailed")
+        } catch {
+            guard case .launchFailed(let message)? = error as? TTSError else { return XCTFail("\(error)") }
+            XCTAssertTrue(message.contains("/rr/tts_server, /work/tts_server"), message)
+        }
+        XCTAssertTrue(q.launcher.processes.isEmpty)
+    }
+}
+
+/// Set when a task got past an await.
+@MainActor
+private final class StopFlag {
+    var isSet = false
+}
+
+/// A Qwen-flavored lifecycle over fakes: the dev server code in `/rr/tts_server` (as
+/// `ServerHarness` lays it out), the HQ install in `/hq`, the same runtime directories.
+@MainActor
+final class QwenHarness {
+    let fs = FakeFileSystem()
+    let launcher = FakeLauncher()
+    let clock = TestClock()
+    let sleeper = TestSleeper()
+    let installation = HQInstallation(home: "/hq", installedAt: nil, modelBytes: 3_100_000_000)
+    let server: TTSServerProcess
+    let environment: ServerEnvironment
+
+    init(policy: ServerPolicy? = nil, venv: Bool = true, model: Bool = true, serverCode: Bool = true,
+         bundleResources: String? = nil) {
+        if serverCode { fs.addFile("/rr/tts_server/tts_server.py") }
+        if venv { fs.addFile("/hq/venv/bin/python3", executable: true) }
+        if model { fs.directories.insert("/hq/models/" + QwenModel.folder) }
+        fs.tails["/logs/tts-server-qwen.log"] = Data("loading the model\nRuntimeError: [metal] out of memory\n".utf8)
+        fs.tails["/logs/tts-server.log"] = Data("Kokoro's log\n".utf8)
+        let clock = self.clock
+        let sleeper = self.sleeper
+        environment = ServerEnvironment(
+            launcher: launcher,
+            fileSystem: fs,
+            pathContext: TTSServerPaths.Context(
+                bundleResources: bundleResources,
+                environment: ["READREAD_HOME": ServerHarness.readreadHome, "HOME": "/Users/test", "TMPDIR": "/tmp/test"],
+                homeDirectory: "/Users/test",
+                currentDirectory: "/work"),
+            directories: RuntimeDirectories(logDirectory: "/logs", cacheDirectory: "/cache", userLexicon: "/lexicon.json"),
+            now: { clock.time },
+            sleep: { try await sleeper.sleep($0) },
+            makeToken: { ServerToken.make() }
+        )
+        server = TTSServerProcess(environment: environment, flavor: .qwen(installation), policy: policy)
+    }
+
+    /// The Qwen server's READY line (both routes loaded).
+    static func emitReady(_ process: FakeProcess, port: Int = 50_200) {
+        process.emit("READY {\"port\":\(port),\"pid\":\(process.pid),\"api\":2,\"loaded\":[\"zh\",\"en\"],"
+            + "\"engine\":\"qwen\",\"model\":\"1.7b\"}\n")
     }
 }

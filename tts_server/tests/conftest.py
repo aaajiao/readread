@@ -211,7 +211,7 @@ def fake_models(tmp_path) -> str:
     return make_fake_models(tmp_path / "fake-models")
 
 
-def make_qwen_models(path: Path, models=("1.7b", "0.6b")) -> str:
+def make_qwen_models(path: Path, models=engine_qwen.MODELS) -> str:
     """Sparse Qwen3-TTS model folders of the right sizes (enough for the start-up checks; the fake model reads none)."""
     for model in models:
         for name, size in engine_qwen.MODEL_FILES[model].items():

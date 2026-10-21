@@ -1,0 +1,28 @@
+/* ReadRead engine messages (the high-quality engine, its install and installer), table "Engine":
+   Simplified Chinese. The keys are the English text in the sources: String(localized: "…", table: "Engine"). */
+
+/* HQInstallation.swift */
+"%@ is larger than 1 MB." = "%@ 大于 1 MB。";
+"%@ cannot be read." = "无法读取 %@。";
+"%@ is not a JSON object." = "%@ 不是 JSON 对象。";
+"%@ has another format version (this ReadRead reads version 1)." = "%@ 的格式版本不同（这个 ReadRead 只读取版本 1）。";
+"%@ does not list the %@ model." = "%@ 没有列出 %@ 模型。";
+"The model folder %@ is missing." = "模型文件夹 %@ 缺失。";
+"%@ is missing or not executable." = "%@ 缺失或无法执行。";
+"The last install or repair has not finished." = "上一次安装或修复没有完成。";
+"%@ is incomplete (an install or repair did not finish)." = "%@ 不完整（安装或修复没有完成）。";
+"READREAD_HQ_HOME is set but empty: unset it to use the default place, or give it a path." = "READREAD_HQ_HOME 已设置但为空：请取消设置以使用默认位置，或者给它一个路径。";
+
+/* HQInstaller.swift */
+"No install-hq.sh found (looked for %@)." = "找不到 install-hq.sh（查找了 %@）。";
+"Cannot create %@: %@" = "无法创建 %@：%@";
+"Could not start install-hq.sh: %@" = "无法启动 install-hq.sh：%@";
+"install-hq.sh stopped (%@) before it finished; see the log: %@" = "install-hq.sh 在完成之前停止了（%@）；请查看日志：%@";
+
+/* TTSError.swift */
+"The high-quality engine cannot start: %@" = "高音质引擎无法启动：%@";
+"Repair it in Settings › Advanced › High-quality mode." = "请在“设置 › 高级 › 高音质模式”中修复。";
+
+/* TTSServerPaths.swift */
+"its Python %@ is missing or not executable" = "它的 Python（%@）缺失或无法执行";
+"its model folder %@ is missing" = "它的模型文件夹（%@）缺失";

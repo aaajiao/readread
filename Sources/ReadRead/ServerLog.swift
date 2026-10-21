@@ -1,7 +1,8 @@
 import Foundation
 
-/// The server's stderr log: `tts-server.log`, appended across launches and
-/// rotated to `tts-server.log.1` once it reaches 5 MB.
+/// A child's stderr log, appended across launches and rotated to `<name>.1` once it
+/// reaches 5 MB: `tts-server.log` (Kokoro), `tts-server-qwen.log` (Qwen) and
+/// `hq-install.log` (install-hq.sh runs).
 @MainActor
 struct ServerLog {
     static let rotationBytes: UInt64 = 5 * 1024 * 1024

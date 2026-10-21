@@ -1,10 +1,10 @@
 """The Qwen3-TTS engine (--engine qwen): Qwen3-TTS-12Hz CustomVoice 8-bit on the GPU through MLX (mlx-audio 0.6.0).
 
 It is optional and lives outside the app: scripts/install-hq.sh builds its venv (requirements-hq.lock) and puts the
-model folders in $READREAD_HQ_HOME/models. Two models: 1.7b (the default) and 0.6b (about 1.1 GB less memory, a little
-faster, less accurate). Two voices, preset speakers of the CustomVoice model: "serena" reads Chinese (and the English
-words in it), "aiden" reads English. The model has no speed control, so synthesis always runs at speed 1.0 and the
-client changes the playback rate (synth_speed in the response).
+model folder in $READREAD_HQ_HOME/models. One model, 1.7b (--model's only value, and its default). Two voices,
+preset speakers of the CustomVoice model: "serena" reads Chinese (and the English words in it), "aiden" reads
+English. The model has no speed control, so synthesis always runs at speed 1.0 and the client changes the playback
+rate (synth_speed in the response).
 
 Per sentence (sentences.clean/split as for Kokoro): frontend_zh.normalize or frontend_en.normalize, a terminal stop for
 lines without one (it steadies the length of short headings), then one streaming generation. Generation is always
@@ -47,18 +47,15 @@ log = logging.getLogger("readread.engine")
 
 ROUTES = ("zh", "en")
 # --model -> the model folder in --models-dir (the Hugging Face repo name; scripts/lib/versions.sh pins the revision).
-MODELS = {"1.7b": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit", "0.6b": "Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit"}
+MODELS = {"1.7b": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"}
 # The files the engine reads and their sizes in bytes. install-hq.sh verifies their sha256 (scripts/lib/versions.sh);
 # the server only checks that they are there with the right size.
-_SHARED_FILES = {"generation_config.json": 245, "merges.txt": 1671839, "preprocessor_config.json": 127,
-                 "tokenizer_config.json": 7344, "vocab.json": 2776833, "speech_tokenizer/config.json": 2336,
-                 "speech_tokenizer/configuration.json": 76, "speech_tokenizer/model.safetensors": 682293092,
-                 "speech_tokenizer/preprocessor_config.json": 234}
 MODEL_FILES = {
     "1.7b": {"config.json": 6058, "model.safetensors": 2393308931, "model.safetensors.index.json": 71786,
-             **_SHARED_FILES},
-    "0.6b": {"config.json": 6058, "model.safetensors": 1286743170, "model.safetensors.index.json": 71447,
-             **_SHARED_FILES},
+             "generation_config.json": 245, "merges.txt": 1671839, "preprocessor_config.json": 127,
+             "tokenizer_config.json": 7344, "vocab.json": 2776833, "speech_tokenizer/config.json": 2336,
+             "speech_tokenizer/configuration.json": 76, "speech_tokenizer/model.safetensors": 682293092,
+             "speech_tokenizer/preprocessor_config.json": 234},
 }
 VOICES = {"zh": ["serena"], "en": ["aiden"]}
 _ROUTE_OF = {voice: route for route, voices in VOICES.items() for voice in voices}
@@ -87,7 +84,7 @@ def check_models(models_dir: str, model: str) -> list[str]:
         return [f"models directory not found: {models_dir} (run ./scripts/install-hq.sh)"]
     folder = os.path.join(models_dir, MODELS[model])
     if not os.path.isdir(folder):
-        return [f"model folder not found: {folder} (run ./scripts/install-hq.sh --model {model})"]
+        return [f"model folder not found: {folder} (run ./scripts/install-hq.sh)"]
     problems = []
     for name, size in MODEL_FILES[model].items():
         path = os.path.join(folder, name)
@@ -96,7 +93,7 @@ def check_models(models_dir: str, model: str) -> list[str]:
         elif os.path.getsize(path) != size:
             problems.append(f"{path} is {os.path.getsize(path)} bytes, expected {size}")
     if problems:
-        problems[-1] += f" (re-run ./scripts/install-hq.sh --model {model})"
+        problems[-1] += " (re-run ./scripts/install-hq.sh)"
     return problems
 
 
@@ -141,6 +138,25 @@ class _Attempt:
     runaway: bool  # stopped past the length limit, or at the token cap without an end of speech
 
 
+# transformers logs this on every load of the model (mlx-audio reads its config, whose model_type transformers does
+# not know, through the generic config class). It is expected, and in the log tail of a crash message it would read
+# like the cause; nothing else from transformers is dropped.
+EXPECTED_CONFIG_WARNING = "You are using a model of type `qwen3_tts` to instantiate a model of type ``."
+
+
+class _DropExpectedConfigWarning(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.getMessage().startswith(EXPECTED_CONFIG_WARNING)
+
+
+_DROP_EXPECTED_CONFIG_WARNING = _DropExpectedConfigWarning()
+
+
+def quiet_expected_warnings() -> None:
+    """Drop transformers' warning about the model's config type (idempotent; imports nothing)."""
+    logging.getLogger("transformers.configuration_utils").addFilter(_DROP_EXPECTED_CONFIG_WARNING)
+
+
 class MLXBackend:
     """The real model: MLX and mlx-audio, imported when the model loads."""
 
@@ -148,6 +164,7 @@ class MLXBackend:
         import mlx.core as mx
         from mlx_audio.tts.utils import load_model
 
+        quiet_expected_warnings()
         mx.set_cache_limit(CACHE_LIMIT)
         model = load_model(Path(path))  # a Path is never looked up on the Hub
         # mlx-audio logs a failure to load either tokenizer as a warning and carries on without it.

@@ -366,17 +366,23 @@ final class PlaybackController {
         publishNowPlaying()
     }
 
-    /// Another engine (the system voice, later the HQ engine): its own cache entries.
-    func setSynthesizer(_ synthesizer: any SpeechSynthesizer) {
-        guard synthesizer !== self.synthesizer else { return }
+    /// Another engine (Qwen3-TTS, Kokoro again, the system voice), with its voices when they
+    /// differ (Qwen's one per language): its own cache entries. The current unit starts again
+    /// with it while playing and stays paused while paused (its audio is made meanwhile).
+    func setSynthesizer(_ synthesizer: any SpeechSynthesizer, voices: [SpeechLanguage: Voice]? = nil) {
+        let newVoices = voices.flatMap { $0 == settings.voices ? nil : $0 }
+        guard synthesizer !== self.synthesizer || newVoices != nil else { return }
         cancelInFlight()
         cancelRetry()
-        self.synthesizer.setPlaybackActive(false)
-        self.synthesizer = synthesizer
+        if synthesizer !== self.synthesizer {
+            self.synthesizer.setPlaybackActive(false)
+            self.synthesizer = synthesizer
+            synthesizer.setPlaybackActive(state == .playing || state == .buffering)
+        }
+        if let newVoices { settings.voices = newVoices }
         cache.removeAll()
         failedPrefetches.removeAll()
-        synthesizer.setPlaybackActive(state == .playing || state == .buffering)
-        if state == .buffering, wantsPlayback { startCurrentUnit() } else { pump() }
+        restartCurrentUnitForNewAudio()
     }
 
     /// App termination.

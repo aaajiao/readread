@@ -105,10 +105,9 @@ def test_fatal_on_a_missing_models_dir(server_dir, tmp_path):
 
 
 def test_fatal_on_a_model_that_is_not_installed(server_dir, tmp_path):
-    models = make_qwen_models(tmp_path / "m", ["1.7b"])
-    message = fatal(qwen_server(server_dir, models, model="0.6b"))
-    assert message == (f"model folder not found: {Path(models) / MODELS['0.6b']} "
-                       "(run ./scripts/install-hq.sh --model 0.6b)")
+    (tmp_path / "m").mkdir()
+    message = fatal(qwen_server(server_dir, str(tmp_path / "m")))
+    assert message == f"model folder not found: {tmp_path / 'm' / MODELS['1.7b']} (run ./scripts/install-hq.sh)"
 
 
 def test_fatal_on_a_wrong_model_file(server_dir, tmp_path):
@@ -117,13 +116,20 @@ def test_fatal_on_a_wrong_model_file(server_dir, tmp_path):
     with open(config, "wb") as f:
         f.truncate(5)
     message = fatal(qwen_server(server_dir, models))
-    assert message == f"{config} is 5 bytes, expected 6058 (re-run ./scripts/install-hq.sh --model 1.7b)"
+    assert message == f"{config} is 5 bytes, expected 6058 (re-run ./scripts/install-hq.sh)"
 
 
 def test_fatal_without_the_mlx_packages(server_dir, qwen_models):
     launch = launcher(FAKES, hide=["mlx_audio", "safetensors"])
     message = fatal(qwen_server(server_dir, qwen_models, launch=launch))
     assert message == "missing Python packages: mlx_audio, safetensors (run ./scripts/install-hq.sh)"
+
+
+def test_a_venv_without_numpy_names_the_package(server_dir, qwen_models):
+    # engine_qwen imports numpy itself: the packages are checked before it is imported (an interrupted pip run leaves
+    # a venv with only some of them), so this is the named FATAL, not a bare ModuleNotFoundError.
+    message = fatal(qwen_server(server_dir, qwen_models, launch=launcher(FAKES, hide=["numpy"])))
+    assert message == "missing Python packages: numpy (run ./scripts/install-hq.sh)"
 
 
 @pytest.mark.parametrize("env, expected", [
@@ -334,19 +340,19 @@ def test_a_client_that_disconnects_while_waiting_never_runs(slow):
     assert generations(slow, "等一下。") == []
 
 
-# --- other models, routes on demand, shutdown ----------------------------------------------------------------
+# --- --model given, routes on demand, shutdown --------------------------------------------------------------
 
-def test_the_0_6b_model_with_routes_loaded_on_demand(qwen_models, server_dir):
-    srv = qwen_server(server_dir, qwen_models, None, model="0.6b")
+def test_model_1_7b_given_with_routes_loaded_on_demand(qwen_models, server_dir):
+    srv = qwen_server(server_dir, qwen_models, None, model="1.7b")  # what the app passes; also the default
     try:
         assert json.loads(srv.line[6:]) == {"port": srv.port, "pid": srv.proc.pid, "api": 2, "loaded": [],
-                                            "engine": "qwen", "model": "0.6b"}
+                                            "engine": "qwen", "model": "1.7b"}
         assert events(srv, "load") == []  # nothing loads before it is needed
         assert synthesize(srv, text="Good morning.", voice="aiden")["lang"] == "en"
         health = json.loads(srv.request("GET", "/health")[2])
-        assert health["loaded"] == ["en"] and health["model"] == "0.6b"
+        assert health["loaded"] == ["en"] and health["model"] == "1.7b"
         loads = events(srv, "load")
-        assert len(loads) == 1 and loads[0]["path"] == str(Path(qwen_models) / MODELS["0.6b"])
+        assert len(loads) == 1 and loads[0]["path"] == str(Path(qwen_models) / MODELS["1.7b"])
         assert [g["text"] for g in generations(srv)] == ["Hello.", "Good morning."]  # the route's warm-up first
         assert "loading route en on demand" in srv.log()
     finally:

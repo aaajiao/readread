@@ -11,6 +11,23 @@ RR_REPO_DIR="$(cd "$RR_LIB_DIR/../.." && pwd)"
 # shellcheck source=versions.sh
 . "$RR_LIB_DIR/versions.sh"
 
+# ReadRead.app carries install-hq.sh and this file in Contents/Resources/installer/ (the repo layout, so
+# RR_REPO_DIR is that folder). Run from there, the default cache below would be inside the signed bundle:
+# refuse unless READREAD_BUILD_CACHE points elsewhere (the app always sets it). Both the path as given and the
+# physical one count, ignoring case: a symlink to the folder, or another spelling of it on a case-insensitive
+# volume, is the same bundle.
+rr_inside_bundle() {
+    local path
+    for path in "$RR_REPO_DIR" "$(cd "$RR_REPO_DIR" 2>/dev/null && pwd -P || true)"; do
+        case "$(printf '%s/' "$path" | LC_ALL=C tr '[:upper:]' '[:lower:]')" in *.app/contents/*) return 0 ;; esac
+    done
+    return 1
+}
+if [ -z "${READREAD_BUILD_CACHE:-}" ] && rr_inside_bundle; then
+    printf '\nERROR: %s\n' "$RR_REPO_DIR is inside an app bundle: set READREAD_BUILD_CACHE to a directory outside it (the default build cache, $RR_REPO_DIR/build/cache, would be inside the bundle)" >&2
+    exit 1
+fi
+
 # Download/build cache shared by build-app.sh and setup.sh (gitignored).
 RR_CACHE_DIR="${READREAD_BUILD_CACHE:-$RR_REPO_DIR/build/cache}"
 # shellcheck disable=SC2034 # read by the scripts that source this file

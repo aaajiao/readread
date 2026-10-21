@@ -104,11 +104,19 @@ protocol SpeechSynthesizer: AnyObject {
     /// Explicit user retry: forget past crashes, restart the engine, wait until ready.
     func restart() async throws
 
+    /// The user chose this engine (Settings): forget a failure that keeps it from starting (a
+    /// FATAL, too many crashes), so the next request is a fresh attempt. Nothing else changes.
+    func resetFailure()
+
     /// Tell the engine whether audio is playing (no idle shutdown while it is).
     func setPlaybackActive(_ active: Bool)
 
     /// Stop the engine now (app termination).
     func shutdown()
+
+    /// Stop the engine's server now, without blocking the main thread; it starts again on demand
+    /// (the engine left behind when another one is chosen: Qwen frees 3–4 GB).
+    func stop() async
 
     var status: SpeechEngineStatus { get }
 
@@ -119,4 +127,10 @@ protocol SpeechSynthesizer: AnyObject {
 extension SpeechSynthesizer {
     var engineID: String { "kokoro" }
     var honoursSpeed: Bool { true }
+
+    func resetFailure() {}
+
+    func stop() async {
+        shutdown()
+    }
 }

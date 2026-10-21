@@ -203,9 +203,24 @@ struct BottomBar: View {
             } else if appState.engineStatus == .starting {
                 ProgressView()
                     .controlSize(.mini)
-                Text("Starting voice engine…")
+                Group {
+                    if appState.engineKind == .qwen {
+                        Text("Starting the high-quality engine…")
+                    } else {
+                        Text("Starting voice engine…")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            } else if appState.engineKind == .qwen {
+                Image(systemName: "sparkles")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("High-quality mode")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("Reading with Qwen3-TTS (Settings › Advanced)")
             }
 
             Spacer()
@@ -301,6 +316,10 @@ struct MessageBanner: View {
                 Button("Copy") { appState.copyBannerMessage() }
                     .help("Copy the message")
                 if kind == .error {
+                    if appState.offersKokoro {
+                        Button("Use Kokoro") { appState.useKokoro() }
+                            .help("Read with Kokoro from this sentence on")
+                    }
                     if appState.offersSystemVoice {
                         Button("Use System Voice") { appState.useSystemVoice() }
                             .help("Read with the macOS system voice until the voice engine works again")

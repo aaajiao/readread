@@ -58,27 +58,41 @@ struct TTSServerPaths: Equatable, Sendable {
         }
     }
 
+    private static func join(_ base: String, _ parts: String...) -> String {
+        parts.reduce(base) { ($0 as NSString).appendingPathComponent($1) }
+    }
+
+    /// Where the server code is looked for, in order: the bundle's `Contents/Resources/tts_server`,
+    /// `$READREAD_HOME/tts_server`, `<cwd>/tts_server`. Both engines run the same code.
+    static func serverCandidates(_ context: Context) -> [String] {
+        var candidates: [String] = []
+        if let resources = context.bundleResources { candidates.append(join(resources, "tts_server")) }
+        if let home = context.readreadHome { candidates.append(join(home, "tts_server")) }
+        candidates.append(join(context.currentDirectory, "tts_server"))
+        return candidates
+    }
+
+    /// The first of `serverCandidates` that holds tts_server.py.
+    @MainActor
+    static func serverDirectory(_ context: Context, fileSystem fs: any FileSystem) -> String? {
+        serverCandidates(context).first { fs.fileExists(atPath: join($0, "tts_server.py")) }
+    }
+
     @MainActor
     static func resolve(_ context: Context, fileSystem fs: any FileSystem) throws(TTSError) -> TTSServerPaths {
         let home = context.readreadHome
-        func join(_ base: String, _ parts: String...) -> String {
-            parts.reduce(base) { ($0 as NSString).appendingPathComponent($1) }
-        }
 
         var pythonCandidates: [String] = []
-        var serverCandidates: [String] = []
+        let serverCandidates = Self.serverCandidates(context)
         var modelCandidates: [String] = []
         if let resources = context.bundleResources {
             pythonCandidates.append(join(resources, "python", "bin", "python3"))
-            serverCandidates.append(join(resources, "tts_server"))
             modelCandidates.append(join(resources, "models"))
         }
         if let home {
             pythonCandidates.append(join(home, "env", "bin", "python3"))
-            serverCandidates.append(join(home, "tts_server"))
+            modelCandidates.append(join(home, "models"))
         }
-        serverCandidates.append(join(context.currentDirectory, "tts_server"))
-        if let home { modelCandidates.append(join(home, "models")) }
 
         var missing: [String] = []
         if home == nil { missing.append("dev environment (READREAD_HOME is set but empty; unset it for ~/.readread)") }
@@ -118,6 +132,33 @@ struct TTSServerPaths: Equatable, Sendable {
         let source: Source = context.bundleResources.map { python.hasPrefix($0) } == true ? .bundle : .dev
         return TTSServerPaths(python: python, serverDirectory: server, modelsDirectory: models, source: source)
     }
+
+    /// The Qwen server's pieces: the HQ install's venv python and models directory (with the
+    /// model's folder in it) and the app's own server code (`serverCandidates`; `source` says
+    /// whose). A missing or broken install is `.hqUnavailable`; missing server code is
+    /// `.launchFailed`, never `.resourcesMissing`, whose setup hint is Kokoro's.
+    @MainActor
+    static func resolveQwen(
+        _ context: Context, installation: HQInstallation, fileSystem fs: any FileSystem
+    ) throws(TTSError) -> TTSServerPaths {
+        var problems: [String] = []
+        if !fs.isExecutableFile(atPath: installation.venvPython) {
+            problems.append(String(localized: "its Python \(installation.venvPython) is missing or not executable",
+                                   table: "Engine"))
+        }
+        let folder = join(installation.modelsDirectory, QwenModel.folder)
+        if !fs.directoryExists(atPath: folder) {
+            problems.append(String(localized: "its model folder \(folder) is missing", table: "Engine"))
+        }
+        guard problems.isEmpty else { throw .hqUnavailable(problems.joined(separator: "; ")) }
+        guard let server = serverDirectory(context, fileSystem: fs) else {
+            throw .launchFailed("TTS server code not found (looked for tts_server.py in "
+                + serverCandidates(context).joined(separator: ", ") + ")")
+        }
+        let source: Source = context.bundleResources.map { server.hasPrefix($0) } == true ? .bundle : .dev
+        return TTSServerPaths(python: installation.venvPython, serverDirectory: server,
+                              modelsDirectory: installation.modelsDirectory, source: source)
+    }
 }
 
 /// Per-user runtime locations, overridable by environment variables so tests and
@@ -128,6 +169,14 @@ struct RuntimeDirectories: Equatable, Sendable {
     let userLexicon: String
 
     var logFile: String { (logDirectory as NSString).appendingPathComponent("tts-server.log") }
+    /// The Qwen server's log, its own file: the two servers never write one.
+    var qwenLogFile: String { (logDirectory as NSString).appendingPathComponent("tts-server-qwen.log") }
+    /// install-hq.sh's stderr, every run appended (`HQInstaller`).
+    var installerLogFile: String { (logDirectory as NSString).appendingPathComponent("hq-install.log") }
+    /// install-hq.sh's TMPDIR.
+    var installerTemporaryDirectory: String { (cacheDirectory as NSString).appendingPathComponent("installer-tmp") }
+    /// install-hq.sh's READREAD_BUILD_CACHE (the Python tarball, pip's cache): never in the bundle.
+    var installerBuildCache: String { (cacheDirectory as NSString).appendingPathComponent("hq-build") }
 
     init(logDirectory: String, cacheDirectory: String, userLexicon: String) {
         self.logDirectory = logDirectory

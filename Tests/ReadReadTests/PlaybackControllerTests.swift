@@ -835,22 +835,90 @@ final class PlaybackControllerTests: XCTestCase {
 
     // MARK: - Engines
 
-    func testAnotherSynthesizerHasItsOwnCache() async {
+    /// v0.5.0: another engine restarts the sentence being read with it (as a new voice does).
+    func testAnotherSynthesizerHasItsOwnCacheAndReadsTheSentenceAgain() async {
         let player = makePlayer()
         await startPlaying(chinese(4), player)
         let system = FakeSynthesizer()
         system.engineID = "apple"
         system.honoursSpeed = false
         player.setSynthesizer(system)
-        XCTAssertEqual(player.cache.count, 0)
         XCTAssertEqual(synth.playbackActiveHistory.last, false)
         XCTAssertEqual(system.playbackActiveHistory.last, true)
-        await waitUntil { system.requests.count == 3 }
-        XCTAssertEqual(texts(system.requests), ["第1句。", "第2句。", "第3句。"], "the playing unit plays on")
+        await waitUntil { system.requests.count == 4 && player.state == .playing }
+        XCTAssertEqual(texts(system.requests), ["第0句。", "第1句。", "第2句。", "第3句。"],
+                       "the sentence being read starts again with the new engine")
+        XCTAssertEqual(output.playedIDs, [0, 0])
         XCTAssertEqual(synth.requests.count, 4, "the old engine gets nothing more")
-        output.finish()
         XCTAssertEqual(output.played.last?.synthSpeed, 1.0)
         XCTAssertTrue(player.cache.keys.allSatisfy { $0.engineID == "apple" })
+    }
+
+    func testAnotherSynthesizerWhilePausedStaysPaused() async {
+        let player = makePlayer()
+        await startPlaying(chinese(4), player)
+        player.pause()
+        let qwen = FakeSynthesizer.qwen()
+        player.setSynthesizer(qwen)
+        XCTAssertEqual(player.state, .paused)
+        await waitUntil { qwen.requests.count == 4 }
+        XCTAssertEqual(texts(qwen.requests), ["第0句。", "第1句。", "第2句。", "第3句。"],
+                       "the current unit's audio is made meanwhile")
+        await settle()
+        XCTAssertEqual(output.playedIDs, [0])
+        XCTAssertEqual(player.state, .paused)
+        XCTAssertEqual(qwen.playbackActiveHistory.last, false, "paused: the new engine may go idle")
+        player.play()
+        XCTAssertEqual(output.playedIDs, [0, 0])
+        XCTAssertEqual(player.state, .playing)
+    }
+
+    /// Qwen's voices come with the engine: one switch, one restart, every request with them.
+    func testAnEngineWithItsOwnVoicesRestartsOnce() async throws {
+        let player = makePlayer()
+        let mixed = document([("Hello there.", .en), ("第二句。", .zh), ("Third one.", .en)])
+        await startPlaying(mixed, player, requests: 3)
+        let qwen = FakeSynthesizer.qwen()
+        let voices = Dictionary(uniqueKeysWithValues: Voice.qwen.map { ($0.language, $0) })
+        player.setSynthesizer(qwen, voices: voices)
+        await waitUntil { qwen.requests.count == 3 && player.state == .playing }
+        XCTAssertEqual(qwen.requests.map(\.voiceID), ["aiden", "serena", "aiden"])
+        XCTAssertEqual(output.playedIDs, [0, 0])
+        XCTAssertEqual(player.settings.voice(for: .zh).id, "serena")
+
+        let before = qwen.requests.count
+        player.setSynthesizer(qwen, voices: voices)
+        await settle()
+        XCTAssertEqual(qwen.requests.count, before, "the same engine and voices change nothing")
+        XCTAssertEqual(output.playedIDs, [0, 0])
+    }
+
+    /// Qwen synthesizes at 1.0 and the player time-stretches: rate = speed / 1.0, and a speed
+    /// change never synthesizes again.
+    func testQwenIsTimeStretchedAndNeverResynthesizedForSpeed() async {
+        let qwen = FakeSynthesizer.qwen()
+        let sleeper = self.sleeper!
+        let player = PlaybackController(
+            synthesizer: qwen, output: output, positions: positions, nowPlaying: nowPlaying,
+            sleep: { try await sleeper.sleep($0) })
+        player.open(chinese(6), settings: PlaybackSettings(speed: 1.5), autoplay: true)
+        await waitUntil { player.state == .playing && qwen.requests.count == 4 }
+        XCTAssertTrue(qwen.requests.allSatisfy { $0.speed == 1.0 })
+        XCTAssertEqual(output.played.last?.synthSpeed, 1.0)
+        XCTAssertEqual(output.userSpeed, 1.5, "played at 1.5 / 1.0")
+        XCTAssertTrue(player.cache.keys.allSatisfy { $0.engineID == "qwen-1.7b" && $0.speed == 1.0 })
+        player.userSetSpeed(0.8)
+        XCTAssertEqual(output.userSpeed, 0.8)
+        await settle()
+        XCTAssertEqual(qwen.requests.count, 4)
+        XCTAssertFalse(sleeper.calls.contains(PlaybackController.speedDebounce))
+        output.finish()
+        await waitUntil { self.output.played.count == 2 && qwen.requests.count == 5 }
+        await settle()
+        XCTAssertEqual(qwen.requests.count, 5, "only the next unit ahead, at 1.0")
+        XCTAssertEqual(qwen.requests.last?.speed, 1.0)
+        XCTAssertEqual(output.played.last?.synthSpeed, 1.0)
+        XCTAssertEqual(output.userSpeed, 0.8)
     }
 
     // MARK: - Word timeline (v0.4.0)

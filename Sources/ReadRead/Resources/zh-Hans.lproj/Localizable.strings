@@ -19,6 +19,25 @@
 "The pronunciation file could not be created: %@" = "无法创建发音文件：%@";
 "No log yet at %@" = "还没有日志：%@";
 
+/* AppState: the engine and high-quality mode (v0.5.0) */
+"High-quality mode is no longer installed, so ReadRead reads with Kokoro." = "高音质模式已不再安装，ReadRead 改用 Kokoro 朗读。";
+"High-quality mode cannot be used (%@), so ReadRead reads with Kokoro. Repair it in Settings › Advanced › High-quality mode." = "无法使用高音质模式（%@），ReadRead 改用 Kokoro 朗读。可以在“设置 › 高级 › 高音质模式”中修复。";
+"High-quality mode cannot be used (%@), so ReadRead reads with Kokoro." = "无法使用高音质模式（%@），ReadRead 改用 Kokoro 朗读。";
+"This build of ReadRead cannot run high-quality mode, so it reads with Kokoro." = "这个版本的 ReadRead 无法运行高音质模式，改用 Kokoro 朗读。";
+"High-quality mode is installed. ReadRead now reads with Qwen3-TTS." = "高音质模式已安装。ReadRead 现在用 Qwen3-TTS 朗读。";
+"The installer finished, but high-quality mode cannot be used: %@" = "安装程序已完成，但无法使用高音质模式：%@";
+"High-quality mode is intact: every file was verified." = "高音质模式完好：每个文件都已验证。";
+"High-quality mode was uninstalled." = "已卸载高音质模式。";
+"Installing high-quality mode failed: %@" = "安装高音质模式失败：%@";
+"Verifying high-quality mode failed: %@" = "验证高音质模式失败：%@";
+"Uninstalling high-quality mode failed: %@" = "卸载高音质模式失败：%@";
+"Cancelled. Installing again resumes where it stopped." = "已取消。再次安装会从中断的地方继续。";
+"Verifying was cancelled." = "已取消验证。";
+"Uninstalling was cancelled." = "已取消卸载。";
+"install.json was not written" = "没有写入 install.json";
+"this build cannot run it" = "这个版本无法运行它";
+"This build of ReadRead has no installer for high-quality mode." = "这个版本的 ReadRead 没有高音质模式的安装程序。";
+
 /* AudioOutput */
 "Audio playback could not start: %@" = "无法开始播放音频：%@";
 
@@ -39,6 +58,10 @@
 "Use Kokoro" = "使用 Kokoro";
 "Read with the Kokoro voices again" = "重新使用 Kokoro 嗓音朗读";
 "Starting voice engine…" = "正在启动语音引擎…";
+"Starting the high-quality engine…" = "正在启动高音质引擎…";
+"High-quality mode" = "高音质模式";
+"Reading with Qwen3-TTS (Settings › Advanced)" = "正在用 Qwen3-TTS 朗读（设置 › 高级）";
+"Read with Kokoro from this sentence on" = "从这一句起改用 Kokoro 朗读";
 "Settings (⌘,)" = "设置（⌘,）";
 "Settings" = "设置";
 "Quit" = "退出";
@@ -128,6 +151,7 @@
 /* SettingsView: Voices */
 "A document is read with the voice of its language; ▶ plays a short sample at speed 1.0 (the document pauses meanwhile)." = "文稿用其语言的嗓音朗读；▶ 以 1.0 倍语速播放一小段试听（试听时文稿暂停）。";
 "The system voice is in use; these voices apply again after Use Kokoro." = "正在使用系统嗓音；选择“使用 Kokoro”后，这些嗓音会重新生效。";
+"Qwen3-TTS has one voice per language. It always reads at speed 1.0; other speeds are played time-stretched." = "Qwen3-TTS 每种语言只有一个嗓音。它总是以 1.0 倍语速合成，其他语速通过变速播放实现。";
 
 /* SettingsView: Reading */
 "Text size" = "文字大小";
@@ -148,13 +172,61 @@
 "Engine" = "引擎";
 "Restart Engine" = "重新启动引擎";
 "Stop the voice engine and start it again" = "停止语音引擎，然后再次启动";
+"Kokoro (standard)" = "Kokoro（标准）";
+"Qwen3-TTS (high quality)" = "Qwen3-TTS（高音质）";
+"Install high-quality mode below first." = "请先在下方安装高音质模式。";
+"Repair high-quality mode below first." = "请先在下方修复高音质模式。";
+"Available once the installer is done." = "安装程序结束后即可选择。";
+"This build of ReadRead cannot run high-quality mode." = "这个版本的 ReadRead 无法运行高音质模式。";
 "Files" = "文件";
 "Log" = "日志";
+"Installer log" = "安装日志";
+"Open the log of the high-quality installer" = "打开高音质模式安装程序的日志";
 "Pronunciations" = "发音";
 "Show your Chinese pronunciation file (created empty if there is none)" = "显示你的中文发音文件（如果还没有，会新建一个空文件）";
 "Article cache" = "文章缓存";
 "Web pages are kept for 30 days, so they open again at once." = "网页会保留 30 天，再次打开时立即可读。";
 "Clear Cached Articles" = "清除缓存的文章";
+
+/* SettingsView: Advanced › High-quality mode (v0.5.0) */
+"Qwen3-TTS reads more naturally. It runs on this Mac's GPU, downloads about 3.5 GB once (Python, its packages and the model) and uses about 3–4 GB of memory while reading; it stops 5 minutes after the last sentence." = "Qwen3-TTS 读起来更自然。它在这台 Mac 的 GPU 上运行，只需下载一次约 3.5 GB（Python、它的软件包和模型），朗读时占用约 3–4 GB 内存；读完最后一句 5 分钟后自动停止。";
+"Install High-Quality Mode (about 3.5 GB)" = "安装高音质模式（约 3.5 GB）";
+"Download and install Qwen3-TTS for this Mac (asks first)" = "为这台 Mac 下载并安装 Qwen3-TTS（会先询问）";
+"Install high-quality mode?" = "安装高音质模式？";
+"About 3.5 GB is downloaded once: Python from GitHub, its packages from PyPI and the Qwen3-TTS model from Hugging Face. About 4.3 GB of free disk space is needed. You can cancel at any time; installing again resumes where it stopped." = "只需下载一次，约 3.5 GB：Python 来自 GitHub，它的软件包来自 PyPI，Qwen3-TTS 模型来自 Hugging Face。需要约 4.3 GB 可用磁盘空间。随时可以取消；再次安装会从中断的地方继续。";
+"Install" = "安装";
+"Installing high-quality mode…" = "正在安装高音质模式…";
+"Verifying high-quality mode…" = "正在验证高音质模式…";
+"Uninstalling high-quality mode…" = "正在卸载高音质模式…";
+"Step %@ of %@: %@" = "第 %@ 步，共 %@ 步：%@";
+"%@ of %@" = "已下载 %@，共 %@";
+"Show Installer Log" = "显示安装日志";
+"Open the installer's log" = "打开安装程序的日志";
+"Stop the installer; installing again resumes where it stopped" = "停止安装程序；再次安装会从中断的地方继续";
+"Model" = "模型";
+"Installed" = "安装日期";
+"Verify" = "验证";
+"Check every file of the installation without changing anything" = "检查安装的每个文件，不做任何更改";
+"Uninstall…" = "卸载…";
+"Remove high-quality mode from this Mac (asks first)" = "从这台 Mac 上移除高音质模式（会先询问）";
+"Uninstall high-quality mode?" = "卸载高音质模式？";
+"This removes Python, its packages and the model from this Mac and frees about %@. ReadRead then reads with Kokoro; high-quality mode can be installed again at any time." = "这会从这台 Mac 上移除 Python、它的软件包和模型，释放约 %@。之后 ReadRead 用 Kokoro 朗读；高音质模式可以随时重新安装。";
+"This removes what is left of high-quality mode from this Mac. ReadRead reads with Kokoro; high-quality mode can be installed again at any time." = "这会从这台 Mac 上移除高音质模式剩下的文件。ReadRead 改用 Kokoro 朗读；高音质模式可以随时重新安装。";
+"Uninstall" = "卸载";
+"High-quality mode cannot be used: %@" = "无法使用高音质模式：%@";
+"Repair" = "修复";
+"Install again: what is missing or damaged is downloaded again" = "重新安装：缺失或损坏的部分会重新下载";
+"Try Again" = "再试一次";
+"Python packages" = "Python 软件包";
+"Model files" = "模型文件";
+"Checking the packages" = "检查软件包";
+"Test: one Chinese sentence" = "测试：朗读一句中文";
+"Install record (install.json)" = "安装记录（install.json）";
+"Python and its packages" = "Python 及其软件包";
+"Model files (size and checksum)" = "模型文件（大小和校验和）";
+"Removing the files" = "删除文件";
+"Remove Downloaded Files…" = "移除已下载的文件…";
+"Remove what an install that did not finish left on this Mac (asks first)" = "从这台 Mac 上移除未完成的安装留下的文件（会先询问）";
 
 /* StatusItem */
 "ReadRead — reading: %@" = "ReadRead — 正在朗读：%@";
@@ -194,6 +266,7 @@
 "Speed for %@ text" = "%@ 文本的语速";
 "中文 voice" = "中文嗓音";
 "English voice" = "英文嗓音";
+"Qwen3-TTS has one voice for %@ text" = "Qwen3-TTS 的 %@ 文本只有一个嗓音";
 
 /* AppleSpeechSynthesizer, WAVDecoder */
 "Chinese (zh-CN)" = "中文（zh-CN）";

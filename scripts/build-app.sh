@@ -490,6 +490,27 @@ rr_defuddle_installed "$RES/defuddle" || rr_die "$RES/defuddle does not hold exa
 rr_note "defuddle: $RR_DEFUDDLE_VERSION ($(cd "$RES/defuddle" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' '))"
 # ── end of the Defuddle block ────────────────────────────────────────
 
+# ── v0.5.0 installer (the high-quality engine's install-hq.sh) ───────
+# Contents/Resources/installer/ gets exactly what install-hq.sh reads, in the repo's layout, so that
+# RR_REPO_DIR (common.sh: two levels above scripts/lib/) is Contents/Resources/installer: the script,
+# common.sh and versions.sh, and the HQ requirements (rr_check_lock_current reads requirements-hq.in
+# and pip installs requirements-hq.lock; neither includes another file). The app runs it as
+# /bin/bash <installer>/scripts/install-hq.sh with READREAD_BUILD_CACHE outside the bundle (common.sh
+# refuses to run from a bundle without it) and READREAD_TTS_SERVER_DIR=Contents/Resources/tts_server.
+# Plain text: the bundle signature seals the files as resources. smoke-test.sh's (hq) check runs it.
+INSTALLER_FILES="scripts/install-hq.sh scripts/lib/common.sh scripts/lib/versions.sh
+tts_server/requirements-hq.in tts_server/requirements-hq.lock"
+rm -rf "$RES/installer"
+for f in $INSTALLER_FILES; do
+    [ -f "$RR_REPO_DIR/$f" ] || rr_die "installer file missing: $RR_REPO_DIR/$f"
+    mkdir -p "$RES/installer/$(dirname "$f")"
+    cp "$RR_REPO_DIR/$f" "$RES/installer/$f"
+    chmod 644 "$RES/installer/$f"
+done
+chmod 755 "$RES/installer/scripts/install-hq.sh"
+rr_note "installer: $(cd "$RES/installer" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')"
+# ── end v0.5.0 installer ─────────────────────────────────────────────
+
 # ── 6. Precompile bytecode with the bundled interpreter ──────────────
 # unchecked-hash .pyc files stay valid whatever the mtimes (zip/copy), and the server runs with -B,
 # so nothing is ever written into the signed bundle at runtime.

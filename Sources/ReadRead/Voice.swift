@@ -86,8 +86,9 @@ struct Voice: Identifiable, Hashable, Sendable {
 
     static let defaultVoiceIDs: [SpeechLanguage: String] = [.zh: "zf_001", .en: "af_heart"]
 
-    static func voices(for language: SpeechLanguage) -> [Voice] {
-        all.filter { $0.language == language }
+    /// The voices of `language` in `catalog` (Kokoro's by default; `catalog(for:)` gives an engine's).
+    static func voices(for language: SpeechLanguage, in catalog: [Voice] = all) -> [Voice] {
+        catalog.filter { $0.language == language }
     }
 
     static func voice(id: String) -> Voice? {
@@ -132,9 +133,10 @@ struct VoiceGroup: Identifiable, Equatable, Sendable {
     var id: VoiceAccent { accent }
     var title: String { accent.groupTitle }
 
-    /// The language's voices by accent, in catalog order (Chinese: one group; English: US, then UK).
-    static func groups(for language: SpeechLanguage) -> [VoiceGroup] {
-        let voices = Voice.voices(for: language)
+    /// The language's voices in `catalog` by accent, in catalog order (Kokoro's Chinese: one group;
+    /// its English: US, then UK; Qwen's: one voice each).
+    static func groups(for language: SpeechLanguage, in catalog: [Voice] = Voice.all) -> [VoiceGroup] {
+        let voices = Voice.voices(for: language, in: catalog)
         var accents: [VoiceAccent] = []
         for voice in voices where !accents.contains(voice.accent) { accents.append(voice.accent) }
         return accents.map { accent in VoiceGroup(accent: accent, voices: voices.filter { $0.accent == accent }) }

@@ -150,6 +150,12 @@ def test_fatal_without_the_spacy_model(server_dir, fake_models):
     assert message == "missing Python packages: en_core_web_sm (run ./scripts/setup.sh)"
 
 
+def test_fatal_without_numpy_names_the_package(server_dir, fake_models):
+    # engine_kokoro imports numpy itself: the packages are checked before it is imported.
+    message = fatal(ServerProcess(server_dir, fake_models, launcher=["-c", HIDE, "numpy"]))
+    assert message == "missing Python packages: numpy (run ./scripts/setup.sh)"
+
+
 # --- HTTP without models ----------------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")

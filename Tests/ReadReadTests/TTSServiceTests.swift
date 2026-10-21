@@ -1,3 +1,4 @@
+import Synchronization
 import XCTest
 
 @testable import ReadRead
@@ -169,5 +170,152 @@ final class TTSServiceTests: XCTestCase {
         h.clock.advance(15 * 60)
         await h.server.checkIdle()
         XCTAssertEqual(h.server.phase, .stopped)
+    }
+
+    // MARK: - Flavors, stop()
+
+    func testKokoroAndQwenNameTheirEngineAndWhetherTheyHonourTheSpeed() {
+        let kokoro = TTSService(server: ServerHarness().server, transport: FakeTransport().transport)
+        XCTAssertEqual(kokoro.engineID, "kokoro")
+        XCTAssertTrue(kokoro.honoursSpeed)
+        let q = QwenHarness()
+        let qwen = TTSService.qwen(installation: q.installation, environment: q.environment)
+        XCTAssertEqual(qwen.engineID, QwenModel.engineID)
+        XCTAssertEqual(qwen.engineID, "qwen-1.7b")
+        XCTAssertFalse(qwen.honoursSpeed)
+        XCTAssertEqual(qwen.server.flavor, .qwen(q.installation))
+        XCTAssertEqual(qwen.logFileURL?.path, "/logs/tts-server-qwen.log")
+        // Through the protocol, as the player sees them.
+        let engines: [any SpeechSynthesizer] = [kokoro, qwen]
+        XCTAssertEqual(engines.map(\.engineID), ["kokoro", "qwen-1.7b"])
+        XCTAssertEqual(engines.map(\.honoursSpeed), [true, false])
+    }
+
+    /// `TTSService.qwen(installation:)` is the app's `QwenEngineFactory` as it is.
+    func testQwenIsTheEngineFactory() throws {
+        let factory: QwenEngineFactory = TTSService.qwen(installation:)
+        let installation = HQInstallation(home: "/nonexistent/hq", installedAt: nil, modelBytes: 0)
+        let engine = try XCTUnwrap(factory(installation) as? TTSService)
+        XCTAssertEqual(engine.server.flavor, .qwen(installation))
+        XCTAssertEqual(engine.server.phase, .stopped, "made, not started")
+        XCTAssertEqual(engine.server.policy.idleTimeout, 5 * 60)
+    }
+
+    func testQwenSynthesizesThroughItsServerAndKeepsSynthSpeedOne() async throws {
+        let q = QwenHarness()
+        q.launcher.script = { QwenHarness.emitReady($0, port: 41_500) }
+        let fake = FakeTransport([.json(status: 200, body: synthesisJSON(synthSpeed: 1.0))])
+        let service = TTSService(server: q.server, transport: fake.transport)
+        let serena = try XCTUnwrap(Voice.qwen.first { $0.id == "serena" })
+
+        let result = try await service.synthesize(SynthesisRequest(text: "你好。", voice: serena, speed: 1.25))
+
+        XCTAssertEqual(result.synthSpeed, 1.0, "made at 1.0; the player time-stretches")
+        let sent = try XCTUnwrap(fake.requests.first)
+        XCTAssertEqual(sent.url?.absoluteString, "http://127.0.0.1:41500/synthesize")
+        let body = try XCTUnwrap(sent.httpBody.flatMap { try JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+        XCTAssertEqual(body["voice"] as? String, "serena")
+        XCTAssertEqual(Array(try XCTUnwrap(q.launcher.last).configuration.arguments.suffix(2)), ["--preload", "zh"])
+    }
+
+    func testStopEndsTheServerWithoutBlockingAndTheNextRequestStartsItAgain() async throws {
+        let q = QwenHarness()
+        q.launcher.script = { QwenHarness.emitReady($0) }
+        let service = TTSService(server: q.server, transport: FakeTransport().transport)
+        let aiden = try XCTUnwrap(Voice.qwen.first { $0.id == "aiden" })
+        _ = try await service.synthesize(SynthesisRequest(text: "Hello.", voice: aiden, speed: 1))
+        let first = try XCTUnwrap(q.launcher.last)
+
+        await service.stop()
+
+        XCTAssertEqual(first.terminateCount, 1)
+        XCTAssertTrue(first.stdinClosed)
+        XCTAssertFalse(first.isRunning)
+        XCTAssertEqual(q.server.phase, .stopped)
+        XCTAssertEqual(service.status, .idle)
+        XCTAssertEqual(q.server.recentCrashCount(), 0, "a stop is not a crash")
+
+        _ = try await service.synthesize(SynthesisRequest(text: "Hello again.", voice: aiden, speed: 1))
+        XCTAssertEqual(q.launcher.processes.count, 2)
+        XCTAssertEqual(service.status, .ready)
+    }
+
+    /// stop() under a request its caller did not cancel: the request fails once its server is gone,
+    /// and no new server is started for it; the next request starts one.
+    func testAStopUnderARequestInFlightNeverStartsAnotherServer() async throws {
+        let h = ServerHarness()
+        h.launcher.script = { $0.emitReady() }
+        let gate = TransportGate()
+        let service = TTSService(server: h.server, transport: gate.transport)
+        let synthesis = try request("zf_001")
+        let task = Task { try await service.synthesize(synthesis) }
+        await waitUntil { gate.requests == 1 }
+
+        await service.stop()
+        gate.fail(.networkConnectionLost)  // what the request sees once its server is gone
+        do {
+            _ = try await task.value
+            XCTFail("expected CancellationError")
+        } catch is CancellationError {}
+        XCTAssertEqual(h.launcher.processes.count, 1, "no new server for it")
+        XCTAssertEqual(gate.requests, 1)
+        XCTAssertEqual(h.server.phase, .stopped)
+        XCTAssertEqual(h.server.recentCrashCount(), 0, "a stop is not a crash")
+
+        _ = try await service.synthesize(try request("zf_001"))
+        XCTAssertEqual(h.launcher.processes.count, 2, "the next request starts it again")
+    }
+
+    func testStopOfAServerThatIgnoresSigtermEscalatesWithoutBlockingTheMainActor() async throws {
+        let h = ServerHarness()
+        h.launcher.script = { process in
+            process.exitsOnTerminate = false
+            process.emitReady()
+        }
+        h.sleeper.set(.gated, for: .seconds(2))  // the grace period, released by the test
+        let service = TTSService(server: h.server, transport: FakeTransport().transport)
+        _ = try await h.server.ensureRunning()
+        let process = try XCTUnwrap(h.launcher.last)
+
+        let stopping = Task { await service.stop() }
+        await waitUntil { h.sleeper.waiting(for: .seconds(2)) == 1 }
+        XCTAssertEqual(process.terminateCount, 1)
+        XCTAssertEqual(process.killCount, 0, "the main actor is free while stop() waits")
+        h.sleeper.release(.seconds(2))
+        await stopping.value
+        XCTAssertEqual(process.killCount, 1)
+        XCTAssertFalse(process.isRunning)
+    }
+}
+
+/// The first request waits until `fail(_:)`, then fails as a request whose server went away; later
+/// requests succeed.
+private final class TransportGate: Sendable {
+    private struct State {
+        var requests = 0
+        var failure: URLError.Code?
+    }
+
+    private let state = Mutex(State())
+
+    var requests: Int { state.withLock { $0.requests } }
+    var transport: HTTPTransport { { [self] request in try await self.send(request) } }
+
+    func fail(_ code: URLError.Code) { state.withLock { $0.failure = code } }
+
+    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        let number = state.withLock { state -> Int in
+            state.requests += 1
+            return state.requests
+        }
+        if number == 1 {
+            while true {
+                if let code = state.withLock({ $0.failure }) { throw URLError(code) }
+                try await Task.sleep(for: .milliseconds(1))
+            }
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                                       headerFields: ["Content-Type": "application/json"])!
+        return (Data(synthesisJSON().utf8), response)
     }
 }

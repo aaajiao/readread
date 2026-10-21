@@ -41,6 +41,36 @@ final class ServerHandshakeTests: XCTestCase {
         }
     }
 
+    func testReadyNamesTheEngineAndTheQwenModel() {
+        XCTAssertEqual(
+            ServerHandshake.parse(line: #"READY {"port":1,"pid":2,"api":2,"loaded":["zh"],"engine":"kokoro"}"#),
+            .ready(ReadyInfo(port: 1, pid: 2, api: 2, loaded: ["zh"], engine: "kokoro")))
+        XCTAssertEqual(
+            ServerHandshake.parse(line: #"READY {"port":1,"pid":2,"api":2,"loaded":["zh","en"],"engine":"qwen","model":"1.7b"}"#),
+            .ready(ReadyInfo(port: 1, pid: 2, api: 2, loaded: ["zh", "en"], engine: "qwen", model: "1.7b")))
+        guard case .invalidReady = ServerHandshake.parse(line: #"READY {"port":1,"pid":2,"api":2,"engine":7}"#) else {
+            return XCTFail("a non-string engine is a malformed READY line")
+        }
+    }
+
+    func testEachFlavorChecksTheReadyEngine() {
+        let installation = HQInstallation(home: "/hq", installedAt: nil, modelBytes: 0)
+        func info(_ engine: String?, _ model: String?) -> ReadyInfo {
+            ReadyInfo(port: 1, pid: 2, api: 2, loaded: [], engine: engine, model: model)
+        }
+        XCTAssertNil(ServerFlavor.kokoro.readyMismatch(info(nil, nil)))
+        XCTAssertNil(ServerFlavor.kokoro.readyMismatch(info("kokoro", nil)))
+        XCTAssertEqual(ServerFlavor.kokoro.readyMismatch(info("qwen", "1.7b")),
+                       "READY reports engine qwen, model 1.7b; ReadRead started engine kokoro")
+        XCTAssertNil(ServerFlavor.qwen(installation).readyMismatch(info("qwen", "1.7b")))
+        XCTAssertEqual(ServerFlavor.qwen(installation).readyMismatch(info(nil, nil)),
+                       "READY reports engine none, model none; ReadRead started engine qwen, model 1.7b")
+        XCTAssertEqual(ServerFlavor.qwen(installation).readyMismatch(info("kokoro", nil)),
+                       "READY reports engine kokoro, model none; ReadRead started engine qwen, model 1.7b")
+        XCTAssertEqual(ServerFlavor.kokoro.engine, .kokoro)
+        XCTAssertEqual(ServerFlavor.qwen(installation).engine, .qwen)
+    }
+
     // MARK: - FATAL
 
     func testParsesFatalMessage() {

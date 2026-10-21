@@ -1,5 +1,5 @@
-"""The Qwen engine with the real models: the real server, started from the HQ venv of scripts/install-hq.sh the way the
-app starts it, for each model install.json lists. Skipped unless READREAD_HQ_HOME points at an install; needs the GPU
+"""The Qwen engine with the real model: the real server, started from the HQ venv of scripts/install-hq.sh the way the
+app starts it (--model 1.7b, the one model). Skipped unless READREAD_HQ_HOME points at an install; needs the GPU
 (Metal, so run it outside any sandbox). pytest itself runs in the dev env; only the servers use the HQ venv:
 
     READREAD_HQ_HOME=~/Library/Application\\ Support/ReadRead/hq ~/.readread/env/bin/python -m pytest -q \\
@@ -73,7 +73,7 @@ def hq(request, tmp_path_factory):
     home, model = hq_home(), request.param
     listed = json.loads((home / "install.json").read_text(encoding="utf-8"))["models"]
     if model not in listed:
-        pytest.skip(f"model {model} is not installed in {home} (./scripts/install-hq.sh --model {model})")
+        pytest.skip(f"model {model} is not installed in {home} (./scripts/install-hq.sh)")
     problems = engine_qwen.check_models(str(home / "models"), model)
     assert not problems, problems
     started = time.monotonic()

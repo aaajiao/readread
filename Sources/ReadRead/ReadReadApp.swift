@@ -56,8 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, AppS
             open(pendingOpen)
             pendingOpen = []
         }
-        // The TTS server starts lazily: on the first read (prewarmed when a fetch
-        // or file open begins), and it shuts down again after 15 idle minutes.
+        // The TTS server starts lazily: on the first read (prewarmed when a fetch or file open
+        // begins), and it shuts down again after 15 idle minutes (Qwen3-TTS's after 5).
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -197,6 +197,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, AppS
     func showSettings() {
         settingsWindow.show()
     }
+
+    var isSettingsVisible: Bool { settingsWindow.isVisible }
 
     func activateApp() {
         NSApp.activate()

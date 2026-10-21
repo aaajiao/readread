@@ -4,7 +4,7 @@
 The app launches it as
 
     <python> -I -B tts_server.py --models-dir <dir> [--preload zh|en|zh,en]
-    <hq python> -I -B tts_server.py --engine qwen [--model 1.7b|0.6b] --models-dir <dir> [--preload ...]
+    <hq python> -I -B tts_server.py --engine qwen [--model 1.7b] --models-dir <dir> [--preload ...]
 
 with READREAD_TOKEN (64 hex characters) in the environment; READREAD_CACHE_DIR and
 READREAD_USER_LEXICON override where caches and the user lexicon live. The default engine is Kokoro
@@ -85,9 +85,10 @@ def _parse_args() -> argparse.Namespace:
 
     parser = _Parser(prog="tts_server.py", description="ReadRead TTS server (HTTP API v2)")
     parser.add_argument("--engine", choices=ENGINES, default="kokoro", help="kokoro (default) or qwen")
-    parser.add_argument("--model", choices=QWEN_MODELS, help="the Qwen3-TTS model (qwen only; default 1.7b)")
+    parser.add_argument("--model", choices=QWEN_MODELS, help="the Qwen3-TTS model (qwen only; 1.7b, the only one, "
+                        "is the default)")
     parser.add_argument("--models-dir", required=True, help="kokoro: directory holding the four Kokoro model "
-                        "files; qwen: directory holding the Qwen3-TTS model folders")
+                        "files; qwen: directory holding the Qwen3-TTS model folder")
     parser.add_argument("--preload", default="", help='routes to load before READY: "zh", "en" or "zh,en"')
     args = parser.parse_args()
     if args.engine != "qwen" and args.model is not None:
@@ -166,6 +167,11 @@ def main() -> None:
              sys.version.split()[0], args.engine, f" {args.model}" if args.model else "")
     qwen = args.engine == "qwen"
 
+    # The packages first (find_spec finds a top-level package without importing it): the engine modules import
+    # numpy, so a venv without its packages would otherwise fail with a bare ModuleNotFoundError.
+    missing = [m for m in REQUIRED_MODULES[args.engine] if importlib.util.find_spec(m) is None]
+    if missing:
+        fatal(f"missing Python packages: {', '.join(missing)} (run {INSTALLER[args.engine]})")
     # Neither engine module imports its engine's libraries; models load later, in the preload thread.
     if qwen:
         from readread_tts import engine_qwen as engine_module  # also switches Hugging Face to offline mode
@@ -176,9 +182,6 @@ def main() -> None:
     problems = engine_module.check_models(models_dir, args.model) if qwen else engine_module.check_models(models_dir)
     if problems:
         fatal("; ".join(problems))
-    missing = [m for m in REQUIRED_MODULES[args.engine] if importlib.util.find_spec(m) is None]
-    if missing:
-        fatal(f"missing Python packages: {', '.join(missing)} (run {INSTALLER[args.engine]})")
     if not qwen:
         try:
             importlib.metadata.distribution("en_core_web_sm")  # what spaCy checks before it would download

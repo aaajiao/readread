@@ -3,8 +3,8 @@
 Inputs for the text-pipeline tests (`GoldenDocumentTests` and others), read by path; `snapshots/` holds the reviewed
 output (`READREAD_UPDATE_SNAPSHOTS=1 swift test --filter GoldenDocumentTests` rewrites it).
 
-These files are not covered by the repository's MIT license. Third-party text keeps its own license, and so does
-its snapshot in `snapshots/`:
+These files are not covered by the repository's MIT license as a whole. Third-party text keeps its own license, and
+so does its snapshot in `snapshots/`:
 
 | File | Source | License |
 |---|---|---|

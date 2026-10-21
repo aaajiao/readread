@@ -1,11 +1,12 @@
 import AppKit
+import ObjectiveC
 import SwiftUI
 import XCTest
 
 @testable import ReadRead
 
 /// Offscreen renders of the panel, the voice list and the Settings window, for a person to look
-/// at (verification of the UI, R4-07 … R4-25). Opt in:
+/// at (verification of the UI, R4-07 … R4-25, v0.5.0's high-quality mode). Opt in:
 ///
 ///     READREAD_RENDER_UI=1 READREAD_RENDER_DIR=<dir> swift test --filter UIRenderTests
 ///
@@ -14,10 +15,15 @@ import XCTest
 /// and captured with `cacheDisplay(in:to:)` (ImageRenderer cannot draw AppKit-backed controls).
 /// The app state runs on fakes: no server, no audio, no network, no user defaults. The PNGs are
 /// checked only for having content; whether they look right is for the person reading them.
+/// High-quality mode is rendered in English (`<name>.png`) and Chinese (`<name>-zh.png`, see
+/// `inChinese`).
 @MainActor
 final class UIRenderTests: XCTestCase {
     private var directory: URL!
     private var scratch: URL!
+    /// The renders' locale: English, or zh-Hans inside `inChinese`.
+    private var locale = UIRenderTests.english
+    private static let english = Locale(identifier: "en_US")
 
     override func setUp() async throws {
         let environment = ProcessInfo.processInfo.environment
@@ -207,6 +213,201 @@ final class UIRenderTests: XCTestCase {
         }
     }
 
+    // MARK: - High-quality mode (v0.5.0), in English and Chinese
+
+    /// Settings › Advanced in every state of High-quality mode (`hq-…`): not installed (Kokoro,
+    /// Qwen not yet available), the install confirmation, installing (step 3 of 6, a model file
+    /// downloading), installed (Qwen chosen, the install's notice), the uninstall confirmation,
+    /// failed, cancelled (with Remove Downloaded Files…), not installed with what a cancelled
+    /// install left, a failed Verify (with Uninstall…), damaged, no HQ home; and the Voices tab with
+    /// Qwen's voices.
+    func testHighQualityModeSettings() async throws {
+        try await renderHighQualitySettings(suffix: "")
+        try await inChinese { try await self.renderHighQualitySettings(suffix: "-zh") }
+    }
+
+    /// The panel with Qwen3-TTS: reading (its voice, "High-quality mode" in the bottom bar), input
+    /// mode with both languages' voices while the engine starts, and a Qwen failure with Use Kokoro.
+    func testThePanelWithQwen() async throws {
+        try await renderPanelWithQwen(suffix: "")
+        try await inChinese { try await self.renderPanelWithQwen(suffix: "-zh") }
+    }
+
+    private func renderHighQualitySettings(suffix: String) async throws {
+        let size = SettingsView.size(for: .advanced)
+        var harness = try Harness(scratch: scratch)
+        harness.shell.isSettingsVisible = true
+        try await render("hq-not-installed\(suffix)", size: size) { Self.advanced(harness.state) }
+        try await render("hq-confirm-install\(suffix)", size: size) { Self.advanced(harness.state, confirming: .install) }
+
+        harness.state.runInstaller(.install)
+        await waitUntil { harness.installer.started == [.install] }
+        harness.installer.state = .running(.install, InstallerProgress(
+            stepName: "Model files", stepIndex: 3, stepCount: 6, file: "\(QwenModel.folder)/model.safetensors",
+            bytesDone: 1_200_000_000, bytesTotal: 2_400_000_000))
+        try await render("hq-running\(suffix)", size: size) { Self.advanced(harness.state) }
+
+        harness.installer.finish(as: .finished, onDisk: .installed(makeInstallation()))
+        XCTAssertEqual(harness.state.engineKind, .qwen)
+        try await render("hq-installed\(suffix)", size: size) { Self.advanced(harness.state) }
+        harness.state.clearSettingsNotice()
+        try await render("hq-confirm-uninstall\(suffix)", size: size) {
+            Self.advanced(harness.state, confirming: .uninstall)
+        }
+        try await render("settings-voices-qwen\(suffix)", size: SettingsView.size(for: .voices)) {
+            SettingsView(appState: harness.state, tab: .voices)
+                .background(Color(nsColor: .windowBackgroundColor))
+        }
+
+        harness = try Harness(scratch: scratch)
+        harness.shell.isSettingsVisible = true
+        harness.state.runInstaller(.install)
+        await waitUntil { harness.installer.started == [.install] }
+        harness.installer.finish(
+            as: .failed, message: "pip install failed (exit 1): no matching distribution found for mlx==0.29.3")
+        try await render("hq-failed\(suffix)", size: size) { Self.advanced(harness.state) }
+        harness.state.runInstaller(.install)
+        await waitUntil { harness.installer.started.count == 2 }
+        harness.installer.hasLeftoverFiles = true  // what the cancelled first install downloaded
+        harness.state.cancelInstaller()
+        try await render("hq-cancelled\(suffix)", size: size) { Self.advanced(harness.state) }
+        harness.installer.state = .idle  // the app ran again
+        try await render("hq-leftovers\(suffix)", size: size) { Self.advanced(harness.state) }
+
+        harness = try Harness(scratch: scratch, install: .installed(makeInstallation()))
+        harness.shell.isSettingsVisible = true
+        harness.state.runInstaller(.check)
+        harness.installer.finish(as: .failed, message: "the HQ install has problems:\n  - "
+            + "\(QwenModel.folder)/model.safetensors is missing or does not match its pinned size and sha256")
+        try await render("hq-verify-failed\(suffix)", size: size) { Self.advanced(harness.state) }
+
+        harness = try Harness(scratch: scratch, install: .damaged(
+            "install.json lists the 1.7b model, but models/\(QwenModel.folder) is missing"))
+        try await render("hq-damaged\(suffix)", size: size) { Self.advanced(harness.state) }
+        harness = try Harness(scratch: scratch, install: .damaged(HQInstallation.emptyHomeMessage))
+        try await render("hq-no-home\(suffix)", size: size) { Self.advanced(harness.state) }
+    }
+
+    private func renderPanelWithQwen(suffix: String) async throws {
+        var harness = try Harness(scratch: scratch, fixtures: ["zh_plain"], install: .installed(makeInstallation()),
+                                  engine: .qwen)
+        try await harness.open(markdown: Self.chineseArticle, title: "秋天的公园", domain: "example.com")
+        try await harness.playFixtureSentence("zh_plain", at: 2.3)  // 一起
+        XCTAssertTrue(harness.state.player.synthesizer === harness.qwen)
+        try await render("reading-qwen\(suffix)", size: Self.panel) { Self.flat(harness.state) }
+
+        harness.state.closeDocument()
+        harness.qwen.status = .starting
+        try await render("input-qwen\(suffix)", size: Self.panel) { Self.flat(harness.state) }
+
+        harness = try Harness(scratch: scratch, install: .installed(makeInstallation()), engine: .qwen)
+        harness.qwen.failures[0] = TTSError.crashed(status: -6, detail: """
+            libc++abi: terminating due to uncaught exception of type std::runtime_error: \
+            [metal::malloc] Unable to allocate 4294967296 bytes.
+            """)
+        harness.state.urlInput = "今天天气很好，我们一起去公园散步吧。公园里的银杏叶已经变黄了。"
+        harness.state.submit()
+        await waitUntil { harness.state.player.state.isFailed }
+        XCTAssertTrue(harness.state.offersKokoro)
+        XCTAssertFalse(harness.state.offersSystemVoice)
+        try await render("error-banner-qwen\(suffix)", size: Self.panel) { Self.flat(harness.state) }
+    }
+
+    private static func advanced(_ state: AppState, confirming: HighQualityModeSection.Confirmation? = nil) -> some View {
+        AdvancedSettingsPane(appState: state, confirming: confirming)
+            .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// Runs `body` with the app's zh-Hans strings. Under `swift test` `Bundle.main` is the xctest
+    /// host, which has none; for the duration of `body`, +[NSBundle mainBundle] answers with a
+    /// bundle holding only a copy of Sources/ReadRead/Resources/zh-Hans.lproj, so SwiftUI's
+    /// lookups and `String(localized:)` resolve to zh-Hans, and the renders get the zh-Hans
+    /// locale. Both are restored after; the app's own lookups are not changed. The swap is
+    /// proven on a sample string before anything renders, and undone after.
+    private func inChinese(_ body: () async throws -> Void) async throws {
+        XCTAssertEqual(String(localized: "Voice"), "Voice", "the test host has no zh-Hans strings")
+        let bundle = try makeBundle(chinese: true)
+        locale = Locale(identifier: "zh-Hans")
+        defer {
+            locale = Self.english
+            XCTAssertEqual(String(localized: "Voice"), "Voice", "Bundle.main is the test host again")
+        }
+        try await withMainBundle(bundle) {
+            XCTAssertEqual(String(localized: "Voice"), "嗓音", "the zh-Hans strings are found")
+            XCTAssertEqual(String(localized: "Install High-Quality Mode (about 3.5 GB)"), "安装高音质模式（约 3.5 GB）")
+            try await body()
+        }
+    }
+
+    /// Runs `body` while +[NSBundle mainBundle] answers with `bundle`, then restores it.
+    private func withMainBundle(_ bundle: Bundle, _ body: () async throws -> Void) async throws {
+        let method = try XCTUnwrap(class_getClassMethod(Bundle.self, #selector(getter: Bundle.main)))
+        let original = method_getImplementation(method)
+        let answer: @convention(block) (AnyObject) -> Bundle = { _ in bundle }
+        let replacement = imp_implementationWithBlock(answer)
+        method_setImplementation(method, replacement)
+        defer {
+            method_setImplementation(method, original)
+            imp_removeBlock(replacement)
+        }
+        XCTAssertEqual(Bundle.main.bundleURL, bundle.bundleURL)
+        try await body()
+    }
+
+    /// A bundle with the app's zh-Hans.lproj as its only localization (`chinese`), or with none
+    /// (English, the development language). Its version is the bottom bar's: `version`, else the
+    /// test host's, as in the other renders.
+    private func makeBundle(chinese: Bool, version: String? = nil) throws -> Bundle {
+        let language = chinese ? "zh-Hans" : "en"
+        let root = scratch.appending(path: "\(language)-\(UUID().uuidString).bundle")
+        let resources = root.appending(path: "Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        if chinese {
+            let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent().appending(path: "Sources/ReadRead/Resources/zh-Hans.lproj")
+            try FileManager.default.copyItem(at: source, to: resources.appending(path: "zh-Hans.lproj"))
+        }
+        var info: [String: Any] = [
+            "CFBundleIdentifier": "com.readread.tests.\(language)", "CFBundlePackageType": "BNDL",
+            "CFBundleDevelopmentRegion": language, "CFBundleLocalizations": [language],
+        ]
+        info["CFBundleShortVersionString"] =
+            version ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: root.appending(path: "Contents/Info.plist"))
+        return try XCTUnwrap(Bundle(url: root))
+    }
+
+    // MARK: - The README's screenshots
+
+    /// `readme-*.png`, the README's screenshots (docs/screenshots/): the panel on its glass reading
+    /// Chinese and English, and the top of Settings › Advanced with high-quality mode installed, in
+    /// the English interface, the bottom bar showing `READREAD_RENDER_VERSION` (skipped without it):
+    ///
+    ///     READREAD_RENDER_UI=1 READREAD_RENDER_DIR=docs/screenshots READREAD_RENDER_VERSION=0.5.0 \
+    ///       swift test --filter UIRenderTests/testTheReadmeScreenshots
+    func testTheReadmeScreenshots() async throws {
+        let version = ProcessInfo.processInfo.environment["READREAD_RENDER_VERSION"] ?? ""
+        try XCTSkipIf(version.isEmpty, "set READREAD_RENDER_VERSION, the version the bottom bar shows")
+        try await withMainBundle(try makeBundle(chinese: false, version: version)) {
+            XCTAssertEqual(BottomBar.versionLabel, "v\(version)")
+            let zh = try Harness(scratch: scratch, fixtures: ["zh_plain"])
+            try await zh.open(markdown: Self.chineseArticle, title: "秋天的公园", domain: "example.com")
+            try await zh.playFixtureSentence("zh_plain", at: 2.3)  // 一起
+            try await render("readme-reading-zh", size: Self.panel) { ContentView(appState: zh.state) }
+
+            let en = try Harness(scratch: scratch, fixtures: ["en_sentence"])
+            try await en.open(markdown: Self.englishArticle, title: "Reading Aloud in London", domain: "example.org")
+            try await en.playFixtureSentence("en_sentence", at: 3.6)  // Smith
+            try await render("readme-reading-en", size: Self.panel) { ContentView(appState: en.state) }
+
+            // The Voice engine and High-quality mode sections: the window's top, above Files.
+            let hq = try Harness(scratch: scratch, install: .installed(makeInstallation()), engine: .qwen)
+            let size = CGSize(width: SettingsView.size(for: .advanced).width, height: 372)
+            try await render("readme-high-quality", size: size) { Self.advanced(hq.state) }
+        }
+    }
+
     // MARK: - Content
 
     static let panel = ReadingPreferences.defaultPanelSize
@@ -250,7 +451,8 @@ final class UIRenderTests: XCTestCase {
         let frame = CGRect(origin: .zero, size: size)
         let hosting = NSHostingView(rootView: content()
             .frame(width: size.width, height: size.height)
-            .environment(\.colorScheme, dark ? .dark : .light))
+            .environment(\.colorScheme, dark ? .dark : .light)
+            .environment(\.locale, locale))
         hosting.sizingOptions = []
         hosting.frame = frame
         hosting.appearance = appearance
@@ -320,6 +522,9 @@ final class UIRenderTests: XCTestCase {
     @MainActor
     private final class Harness {
         let synth = FakeSynthesizer()
+        /// Qwen3-TTS, when the install is there and chosen (`engine`).
+        let qwen = FakeSynthesizer.qwen()
+        let installer: FakeInstaller
         let system = FakeSynthesizer()
         let output = FakeAudioOutput()
         let previewOutput = FakeAudioOutput()
@@ -328,16 +533,22 @@ final class UIRenderTests: XCTestCase {
         let pasteboard = FakePasteboard()
         let workspace = FakeWorkspace()
         let loginItem = FakeLoginItem()
+        let shell = FakeShell()
         let state: AppState
         /// The fixture texts and their real token timings (Fixtures/timings).
         private var fixtures: [String: SynthesisResult] = [:]
         private var fixtureTexts: [String: String] = [:]
 
-        init(scratch: URL, fixtures names: [String] = [], fontSize: Double? = nil) throws {
+        /// `install`: what install.json says; `engine`: the engine chosen before.
+        init(scratch: URL, fixtures names: [String] = [], fontSize: Double? = nil,
+             install: HQInstallState = .notInstalled, engine: EngineKind? = nil) throws {
             if let fontSize { store.set(fontSize, forKey: "font_size") }
+            if let engine { store.set(engine.rawValue, forKey: EngineKind.defaultsKey) }
+            installer = FakeInstaller(install)
             system.engineID = "apple"
             system.status = .ready
             synth.status = .ready
+            qwen.status = .ready
             loginItem.status = .enabled
             for name in names {
                 let data = try Fixtures.data("timings/\(name).json")
@@ -348,22 +559,26 @@ final class UIRenderTests: XCTestCase {
                 fixtureTexts[name] = text
             }
             let fixtures = self.fixtures
-            synth.handler = { request in
+            let handler: (SynthesisRequest) async throws -> SynthesisResult = { request in
                 if let result = fixtures[request.text] { return result }
                 return FakeSynthesizer.result(text: request.text, duration: 2, requestID: request.requestID)
             }
+            synth.handler = handler
+            qwen.handler = handler
             let sleeper = TestSleeper()
             sleeper.setDefault(.immediate)
             let system = self.system
+            let qwen = self.qwen
             state = AppState(
-                engine: synth, output: output, defaults: store, loadDocument: loader.load,
-                positions: MemoryPositions(), nowPlaying: nil, systemVoice: { system },
+                engine: synth, qwenEngine: { _ in qwen }, installer: installer, output: output, defaults: store,
+                loadDocument: loader.load, positions: MemoryPositions(), nowPlaying: nil, systemVoice: { system },
                 sleep: { try await sleeper.sleep($0) },
                 pasteboard: pasteboard, workspace: workspace, loginItem: loginItem, previewOutput: previewOutput,
                 directories: RuntimeDirectories(
                     logDirectory: scratch.appending(path: "logs").path,
                     cacheDirectory: scratch.appending(path: "cache").path,
                     userLexicon: scratch.appending(path: "support/lexicon_zh.json").path))
+            state.shell = shell
         }
 
         /// Loads a web page and waits until its first sentence plays.

@@ -28,6 +28,11 @@ enum TTSError: LocalizedError, Equatable {
     case requestTimedOut(seconds: Int)
     /// 200, but the body was not what API v2 promises.
     case badResponse(String)
+    /// The high-quality (Qwen) install cannot run the server: its Python or its model folder is
+    /// missing (the detail says which), or the server refused to start from it (its FATAL message,
+    /// as it is: a package or a model file missing or damaged). Installing again repairs it, from
+    /// Settings; the Kokoro setup hint (`isResourcesMissing`) never applies.
+    case hqUnavailable(String)
 
     /// True when files are genuinely missing, i.e. the "run ./scripts/setup.sh"
     /// hint applies.
@@ -40,7 +45,7 @@ enum TTSError: LocalizedError, Equatable {
     var isServerFailure: Bool {
         switch self {
         case .resourcesMissing, .launchFailed, .serverFatal, .exitedDuringStartup,
-             .startTimeout, .protocolError, .crashed, .gaveUp, .connectionFailed, .requestTimedOut:
+             .startTimeout, .protocolError, .crashed, .gaveUp, .connectionFailed, .requestTimedOut, .hqUnavailable:
             return true
         case .server, .http, .badResponse:
             return false
@@ -84,6 +89,9 @@ enum TTSError: LocalizedError, Equatable {
             return String(localized: "The TTS server did not answer within \(String(seconds)) s.")
         case .badResponse(let message):
             return String(localized: "Unexpected response from the TTS server: \(message)")
+        case .hqUnavailable(let detail):
+            return String(localized: "The high-quality engine cannot start: \(detail)", table: "Engine") + "\n"
+                + String(localized: "Repair it in Settings › Advanced › High-quality mode.", table: "Engine")
         }
     }
 

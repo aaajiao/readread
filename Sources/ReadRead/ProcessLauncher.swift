@@ -28,8 +28,18 @@ protocol ServerProcessHandle: AnyObject {
     func terminate()
     /// SIGKILL.
     func kill()
+    /// SIGTERM to the child's process group, so what it runs in the foreground gets it too (bash runs
+    /// its trap only once a foreground command has ended); the child alone when it leads no group.
+    func terminateGroup()
+    /// SIGKILL to the child's process group (nothing it started is left running), as `terminateGroup`.
+    func killGroup()
     /// Close our end of the child's stdin; the server treats EOF as "parent gone".
     func closeStdin()
+}
+
+extension ServerProcessHandle {
+    func terminateGroup() { terminate() }
+    func killGroup() { kill() }
 }
 
 /// Starts child processes. Callbacks are delivered on the main actor, in order:
@@ -120,6 +130,21 @@ final class FoundationServerProcess: ServerProcessHandle {
     func kill() {
         guard process.isRunning else { return }
         Darwin.kill(process.processIdentifier, SIGKILL)
+    }
+
+    func terminateGroup() { signalGroup(SIGTERM) }
+    func killGroup() { signalGroup(SIGKILL) }
+
+    /// `Process` starts the child as the leader of a process group of its own (pgid == pid), so that
+    /// group is the child and what it started, never the app's; otherwise only the child is signalled.
+    private func signalGroup(_ signal: Int32) {
+        guard process.isRunning else { return }
+        let pid = process.processIdentifier
+        if getpgid(pid) == pid {
+            _ = killpg(pid, signal)
+        } else {
+            Darwin.kill(pid, signal)
+        }
     }
 
     func closeStdin() {

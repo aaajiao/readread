@@ -71,6 +71,8 @@ final class FakeProcess: ServerProcessHandle {
     private(set) var isRunning = true
     private(set) var terminateCount = 0
     private(set) var killCount = 0
+    /// What was sent to its process group (`terminateGroup`, `killGroup`; also counted above).
+    private(set) var groupSignals: [Int32] = []
     private(set) var stdinClosed = false
     /// Exit (status 0) as soon as SIGTERM arrives, like the real server.
     var exitsOnTerminate = true
@@ -106,6 +108,16 @@ final class FakeProcess: ServerProcessHandle {
     func kill() {
         killCount += 1
         exit(code: 9, signal: true)
+    }
+
+    func terminateGroup() {
+        groupSignals.append(SIGTERM)
+        terminate()
+    }
+
+    func killGroup() {
+        groupSignals.append(SIGKILL)
+        kill()
     }
 
     func closeStdin() { stdinClosed = true }
@@ -321,6 +333,8 @@ final class FakeSynthesizer: SpeechSynthesizer {
     var prewarmed: [SpeechLanguage] = []
     var restartCount = 0
     var restartError: (any Error)?
+    /// `resetFailure()` calls: the engine was chosen in Settings (a fresh attempt).
+    var resetFailureCount = 0
     /// While true, restart() suspends until `releaseRestart()`, like a real
     /// restart waiting for the old server to exit and the new one to load.
     var holdRestart = false
@@ -328,8 +342,20 @@ final class FakeSynthesizer: SpeechSynthesizer {
     var restartsWaiting: Int { restartWaiters.count }
     var playbackActiveHistory: [Bool] = []
     var shutdownCount = 0
+    /// `stop()` calls: the engine was left behind (another engine was chosen) or an installer
+    /// operation needed its server gone.
+    var stopCount = 0
     var status: SpeechEngineStatus = .idle
     var logFileURL: URL? = URL(fileURLWithPath: "/logs/tts-server.log")
+
+    /// A Qwen3-TTS stand-in: its engine id, no speed of its own (synthSpeed 1.0), its own log.
+    static func qwen() -> FakeSynthesizer {
+        let qwen = FakeSynthesizer()
+        qwen.engineID = QwenModel.engineID
+        qwen.honoursSpeed = false
+        qwen.logFileURL = URL(fileURLWithPath: "/logs/tts-server-qwen.log")
+        return qwen
+    }
 
     func synthesize(_ request: SynthesisRequest) async throws -> SynthesisResult {
         let number = requests.count
@@ -383,6 +409,25 @@ final class FakeSynthesizer: SpeechSynthesizer {
 
     func setPlaybackActive(_ active: Bool) { playbackActiveHistory.append(active) }
     func shutdown() { shutdownCount += 1 }
+    func resetFailure() { resetFailureCount += 1 }
+
+    /// While true, stop() suspends until `releaseStop()`, like a server taking its time to exit.
+    var holdStop = false
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func stop() async {
+        stopCount += 1
+        if holdStop {
+            await withCheckedContinuation { stopWaiters.append($0) }
+        }
+    }
+
+    func releaseStop() {
+        holdStop = false
+        let waiters = stopWaiters
+        stopWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
 
     nonisolated static func result(text: String = "x", duration: Double = 1, synthSpeed: Double = 1,
                                    requestID: String? = nil) -> SynthesisResult {
@@ -593,12 +638,77 @@ final class FakeShell: AppShell {
     }
 
     private(set) var calls: [Call] = []
+    /// The Settings window is open (an installer result is shown there, else in the panel).
+    var isSettingsVisible = false
 
     func showPanel() { calls.append(.showPanel) }
     func hidePanel() { calls.append(.hidePanel) }
     func showSettings() { calls.append(.showSettings) }
     func activateApp() { calls.append(.activateApp) }
     func quit() { calls.append(.quit) }
+}
+
+// MARK: - High-quality mode fakes (milestone v0.5.0)
+
+/// install-hq.sh without a process: the test sets what install.json says and ends operations.
+@Observable
+@MainActor
+final class FakeInstaller: HQInstalling {
+    var state: InstallerState = .idle
+    var installState: HQInstallState = .notInstalled
+    var hasLeftoverFiles = false
+    @ObservationIgnored var logFileURL = URL(fileURLWithPath: "/logs/hq-install.log")
+    @ObservationIgnored var onFinish: (@MainActor (InstallerOperation, InstallerState) -> Void)?
+    /// What the next `refresh()` reads from install.json (nil: what it said before).
+    @ObservationIgnored var onDisk: HQInstallState?
+    @ObservationIgnored private(set) var started: [InstallerOperation] = []
+    @ObservationIgnored private(set) var refreshCount = 0
+    @ObservationIgnored private(set) var cancelCount = 0
+    @ObservationIgnored private(set) var shutdownCount = 0
+
+    init(_ installState: HQInstallState = .notInstalled) {
+        self.installState = installState
+    }
+
+    func refresh() {
+        refreshCount += 1
+        if let onDisk { installState = onDisk }
+    }
+
+    func start(_ operation: InstallerOperation) {
+        guard !state.isRunning else { return }
+        started.append(operation)
+        state = .running(operation, InstallerProgress())
+    }
+
+    func cancel() {
+        cancelCount += 1
+        finish(as: .cancelled)
+    }
+
+    func shutdown() { shutdownCount += 1 }
+
+    /// The running operation ends as `outcome` (`.finished`, `.cancelled` or a failure with
+    /// `message`) with install.json saying `onDisk` from now on; then `onFinish`.
+    func finish(as outcome: Outcome, message: String = "boom", onDisk newState: HQInstallState? = nil) {
+        guard case .running(let operation, _) = state else { return }
+        if let newState { onDisk = newState }
+        refresh()
+        state = switch outcome {
+        case .finished: .finished(operation)
+        case .failed: .failed(operation, message: message)
+        case .cancelled: .cancelled(operation)
+        }
+        onFinish?(operation, state)
+    }
+
+    enum Outcome { case finished, failed, cancelled }
+}
+
+/// An installation as install.json records it.
+func makeInstallation(home: String = "/hq", installedAt: Date? = Date(timeIntervalSince1970: 1_792_551_739),
+                      modelBytes: Int64 = 3_080_140_019) -> HQInstallation {
+    HQInstallation(home: home, installedAt: installedAt, modelBytes: modelBytes)
 }
 
 /// Stands in for `DocumentLoader.load` in the app tests: text and files become documents through

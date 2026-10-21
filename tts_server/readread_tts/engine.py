@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     import numpy as np
 
 ENGINES = ("kokoro", "qwen")
-QWEN_MODELS = ("1.7b", "0.6b")  # --model for --engine qwen; the first is the default
+QWEN_MODELS = ("1.7b",)  # --model for --engine qwen: one model, also the default
 SENTENCE_GAP_S = 0.25  # silence between two sentences of one synthesis
 SILENT_S = 0.15  # what text with nothing to say comes back as
 

@@ -20,7 +20,14 @@
 #       offline, and stops the server. Its report must name the bundle's own
 #       Resources/defuddle/defuddle.full.js as the page reader. A binary without a self-test mode
 #       is FAILed without being run: it would start the menu bar app instead.
-#   (c) The bundle is unchanged by (a) and (b): same files, sizes and mtimes (no runtime .pyc).
+#   (hq) v0.5.0: Resources/installer/ holds exactly install-hq.sh, scripts/lib/{common,versions}.sh and
+#       tts_server/requirements-hq.{in,lock}, and the script runs from the bundle in a clean environment:
+#       --help exits 0; --check --json-progress with an empty scratch READREAD_HQ_HOME and a scratch
+#       READREAD_BUILD_CACHE exits 1 within 10 s, its stdout only JSON events, the last an error event;
+#       without READREAD_BUILD_CACHE common.sh's guard refuses (exit 1: the default build cache would be
+#       inside the bundle).
+#   (c) The bundle is unchanged by (a), (b) and (hq): same files, sizes and mtimes (no runtime .pyc,
+#       nothing install-hq.sh wrote under its RR_REPO_DIR).
 #   (d) (a) again from a copy of the app, named ReadRead.app whatever <app> is called, whose bundle
 #       path is >= 160 characters (espeak-ng keeps its data path in a 160-byte buffer; long paths
 #       happen, e.g. under App Translocation).
@@ -425,8 +432,92 @@ else
     CHILD_PID=""
 fi
 
+# ── (hq) v0.5.0: the bundled installer of the high-quality engine ────
+# Contents/Resources/installer/ holds install-hq.sh and exactly what it reads, in the repo's layout,
+# and the script runs from there: --help exits 0; --check --json-progress against an empty HQ home
+# exits 1 within 10 s, its stdout only JSON events and the last an error event; without
+# READREAD_BUILD_CACHE common.sh refuses (exit 1, its message): the default build cache would be in
+# the bundle. Every run has a clean environment with a scratch HOME, TMPDIR and READREAD_HQ_HOME;
+# (c) then shows that it wrote nothing into the bundle.
+echo "-- (hq) bundled installer of the high-quality engine"
+HQ_INSTALLER="$APP/Contents/Resources/installer"
+HQ_SCRIPT="$HQ_INSTALLER/scripts/install-hq.sh"
+HQ_DIR="$TMP_ROOT/hq"
+HQ_FILES="scripts/install-hq.sh
+scripts/lib/common.sh
+scripts/lib/versions.sh
+tts_server/requirements-hq.in
+tts_server/requirements-hq.lock"
+mkdir -p "$HQ_DIR/home" "$HQ_DIR/tmp" "$HQ_DIR/build-cache" "$HQ_DIR/empty-hq"
+HQ_ENV=(HOME="$HQ_DIR/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=en_US.UTF-8 TMPDIR="$HQ_DIR/tmp"
+    READREAD_HQ_HOME="$HQ_DIR/empty-hq")
+hq_found=$(cd "$HQ_INSTALLER" 2>/dev/null && find . -type f | sed 's|^\./||' | LC_ALL=C sort || true)
+if [ "$hq_found" = "$(printf '%s\n' "$HQ_FILES" | LC_ALL=C sort)" ]; then
+    pass hq "Resources/installer holds exactly $(printf '%s\n' "$HQ_FILES" | tr '\n' ' ')"
+else
+    fail hq "Resources/installer holds: $(printf '%s' "${hq_found:-nothing}" | tr '\n' ' ') (want: $(printf '%s' "$HQ_FILES" | tr '\n' ' '))"
+fi
+if [ -f "$HQ_SCRIPT" ]; then
+    status=0
+    env -i "${HQ_ENV[@]}" READREAD_BUILD_CACHE="$HQ_DIR/build-cache" /bin/bash "$HQ_SCRIPT" --help \
+        </dev/null >"$HQ_DIR/help.out" 2>"$HQ_DIR/help.err" || status=$?
+    if [ "$status" = 0 ] && grep -q 'install-hq.sh --check' "$HQ_DIR/help.err"; then
+        pass hq "--help exits 0: $(head -n 1 "$HQ_DIR/help.err")"
+    else
+        fail hq "--help exited $status"
+        tail_file "$HQ_DIR/help.err" "install-hq.sh --help stderr"
+    fi
+
+    t0=$(now_ms)
+    (
+        exec env -i "${HQ_ENV[@]}" READREAD_BUILD_CACHE="$HQ_DIR/build-cache" /bin/bash "$HQ_SCRIPT" \
+            --check --json-progress </dev/null >"$HQ_DIR/check.out" 2>"$HQ_DIR/check.err"
+    ) &
+    CHILD_PID=$!
+    while kill -0 "$CHILD_PID" 2>/dev/null && [ $(($(now_ms) - t0)) -lt 10000 ]; do sleep 0.1; done
+    if kill -0 "$CHILD_PID" 2>/dev/null; then
+        kill -TERM "$CHILD_PID" 2>/dev/null || true
+        sleep 1
+        kill -KILL "$CHILD_PID" 2>/dev/null || true
+        fail hq "--check --json-progress on an empty HQ home did not exit within 10 s (killed)"
+        tail_file "$HQ_DIR/check.err" "install-hq.sh --check stderr"
+    else
+        status=0
+        wait "$CHILD_PID" || status=$?
+        elapsed=$(($(now_ms) - t0))
+        last=$(tail -n 1 "$HQ_DIR/check.out" 2>/dev/null || true)
+        last_is_error=0
+        case "$last" in '{"event":"error","message":'*) last_is_error=1 ;; esac
+        if [ "$status" = 1 ] && [ "$last_is_error" = 1 ] && ! grep -qv '^{"event":"' "$HQ_DIR/check.out"; then
+            pass hq "--check --json-progress on an empty HQ home: exit 1 after $elapsed ms, $(wc -l <"$HQ_DIR/check.out" | tr -d ' ') JSON events, the last: $(printf '%s' "$last" | head -c 160)"
+        else
+            fail hq "--check --json-progress on an empty HQ home: exit $status after $elapsed ms, last stdout line: ${last:-none}"
+            tail_file "$HQ_DIR/check.out" "install-hq.sh --check stdout"
+            tail_file "$HQ_DIR/check.err" "install-hq.sh --check stderr"
+        fi
+    fi
+    CHILD_PID=""
+
+    status=0
+    env -i "${HQ_ENV[@]}" /bin/bash "$HQ_SCRIPT" --check --json-progress \
+        </dev/null >"$HQ_DIR/guard.out" 2>"$HQ_DIR/guard.err" || status=$?
+    if [ "$status" = 1 ] && grep -q 'is inside an app bundle: set READREAD_BUILD_CACHE' "$HQ_DIR/guard.err" &&
+        [ ! -s "$HQ_DIR/guard.out" ]; then
+        pass hq "without READREAD_BUILD_CACHE the bundled script refuses (exit 1): $(grep -m 1 'inside an app bundle' "$HQ_DIR/guard.err" | head -c 160)"
+    else
+        fail hq "without READREAD_BUILD_CACHE: exit $status (want 1 and the guard's message)"
+        tail_file "$HQ_DIR/guard.err" "install-hq.sh stderr"
+    fi
+    if [ -n "$(find "$HQ_DIR/empty-hq" -mindepth 1 -print -quit)" ]; then
+        fail hq "the empty HQ home is no longer empty after --check: $(find "$HQ_DIR/empty-hq" -mindepth 1 | head -5 | tr '\n' ' ')"
+    fi
+else
+    fail hq "no $HQ_SCRIPT"
+fi
+# ── end (hq) ─────────────────────────────────────────────────────────
+
 # ── (c) bundle immutability ──────────────────────────────────────────
-echo "-- (c) bundle unchanged by (a) and (b)"
+echo "-- (c) bundle unchanged by (a), (b) and (hq)"
 snapshot "$APP" "$TMP_ROOT/after.txt"
 if diff "$TMP_ROOT/before.txt" "$TMP_ROOT/after.txt" >"$TMP_ROOT/bundle.diff"; then
     pass c "no file in the bundle was added, removed or modified ($(wc -l <"$TMP_ROOT/before.txt" | tr -d ' ') paths)"

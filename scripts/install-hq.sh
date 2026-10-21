@@ -2,18 +2,21 @@
 # shellcheck source-path=SCRIPTDIR
 # Installs the optional high-quality engine, Qwen3-TTS on the GPU through MLX, outside the app:
 #
-#   ./scripts/install-hq.sh [--model 1.7b|0.6b|both] [--json-progress]   install or update (default: 1.7b)
-#   ./scripts/install-hq.sh --check [--model 1.7b|0.6b|both] [--json-progress]
-#   ./scripts/install-hq.sh --uninstall [--json-progress]
+#   ./scripts/install-hq.sh [--json-progress]               install, update or repair
+#   ./scripts/install-hq.sh --check [--json-progress]       verify (exit status 0 or 1)
+#   ./scripts/install-hq.sh --uninstall [--json-progress]   remove $READREAD_HQ_HOME
 #
 #   $READREAD_HQ_HOME/python/        standalone CPython (scripts/lib/versions.sh, sha256-verified)
 #   $READREAD_HQ_HOME/venv/          tts_server/requirements-hq.lock, hash-checked (pip --require-hashes)
-#   $READREAD_HQ_HOME/models/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit/   and/or ...-0.6B-...: every file at the
-#                                    Hugging Face revision pinned in versions.sh, size- and sha256-verified;
-#                                    a file both models share (speech_tokenizer/model.safetensors, the
-#                                    tokenizer files) is stored once and hardlinked
+#   $READREAD_HQ_HOME/models/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit/   the one model (RR_HQ_MODELS: the best
+#                                    one, no model choice): every file at the Hugging Face revision pinned
+#                                    in versions.sh, size- and sha256-verified
 #   $READREAD_HQ_HOME/install.json   {"version":1,"python","lock_sha256","models":{"1.7b":{"revision",...}},
-#                                    "installed_at"}, written last, after the checks below passed
+#                                    "installed_at"}, written last, after the checks below passed. Before its first
+#                                    change to python/, venv/ or a model file an install run moves an existing one
+#                                    aside to install.json.prev (removed when it finishes): a run that stops on the
+#                                    way never leaves a record of an install whose venv or model files it was
+#                                    replacing, and one that changed nothing leaves install.json as it was.
 #
 # The app then runs the server from that venv (<server_dir>: the app bundle's or the repo's tts_server/):
 #   $READREAD_HQ_HOME/venv/bin/python3 -I -B <server_dir>/tts_server.py --engine qwen --model 1.7b \
@@ -23,19 +26,23 @@
 # (or when venv/ no longer holds exactly the locked distributions, or a file in either no longer matches its
 # sha256: python/'s manifest, the RECORD pip wrote for each distribution); model files are re-verified on every run,
 # a corrupt one is downloaded again, and an interrupted download resumes from its .part file. An install ends
-# with an import check and, for each model it covered, a one-sentence Chinese synthesis through the real server
-# (READY -> POST /synthesize -> stdin EOF -> exit 0); install.json lists a model only after that passed.
+# with an import check and a one-sentence Chinese synthesis through the real server (READY -> POST /synthesize
+# -> stdin EOF -> exit 0); install.json lists the model only after that passed.
 #
 # --json-progress  one JSON object per line on stdout: {"event":"step","name":..,"index":N,"count":N},
 #                  {"event":"download","file":..,"done":N,"total":N}, then {"event":"done",..} or
 #                  {"event":"error","message":..}. Human-readable text goes to stderr.
 # --check          verify an existing install (python/ against the manifest written when it was extracted, every
 #                  venv/ file against the sha256 pip recorded and the venv's distributions against the lock, every
-#                  model file's size and sha256, imports) without changing anything; exit status 0 or 1. Checks
-#                  the models install.json lists unless --model says which.
-# --uninstall      remove $READREAD_HQ_HOME, only if it holds nothing but what this script creates.
+#                  model file's size and sha256, imports) without changing anything; exit status 0 or 1.
+#                  install.json must list the model. Another model's install.json entry or models/ folder
+#                  (older versions of this script could add a second, smaller model) is ignored here.
+# --uninstall      remove $READREAD_HQ_HOME, only if it holds nothing but what this script creates (inside python/,
+#                  venv/ and python.partial/ too: only the names it creates there). Once the removal runs, SIGINT,
+#                  SIGTERM and SIGHUP no longer stop it: it is not resumable, so it finishes.
+# --model 1.7b     accepted for older command lines: 1.7b is the one model, always installed and checked.
 # An install, too, refuses a READREAD_HQ_HOME that holds anything else: it only ever replaces its own python/,
-# venv/ and .tmp.
+# venv/ and .tmp. A models/ folder of another model counts as something else for both (their message says so).
 #
 # Environment: READREAD_HQ_HOME (default ~/Library/Application Support/ReadRead/hq; set but empty is an error);
 # READREAD_BUILD_CACHE (Python tarball and pip cache, default <repo>/build/cache); READREAD_TTS_SERVER_DIR
@@ -89,17 +96,19 @@ usage_error() {
 }
 
 MODE=install
-MODEL_ARG=""
 while [ $# -gt 0 ]; do
     case "$1" in
-    --model)
-        [ $# -ge 2 ] || usage_error "--model needs a value (1.7b, 0.6b or both)"
-        MODEL_ARG=$2
-        shift 2
-        ;;
-    --model=*)
-        MODEL_ARG=${1#--model=}
-        shift
+    --model | --model=*) # older versions offered a choice; --model 1.7b (the one model) still means it
+        if [ "$1" = --model ]; then
+            [ $# -ge 2 ] || usage_error "--model needs a value"
+            model_arg=$2
+            shift 2
+        else
+            model_arg=${1#--model=}
+            shift
+        fi
+        [ "$model_arg" = "$RR_HQ_MODELS" ] ||
+            usage_error "--model $model_arg: there is one model, $RR_HQ_MODELS, and install-hq.sh always installs it"
         ;;
     --json-progress) shift ;;
     --check | --uninstall)
@@ -114,25 +123,10 @@ while [ $# -gt 0 ]; do
     *) usage_error "unknown argument: $1" ;;
     esac
 done
-case "$MODEL_ARG" in
-"") MODELS="" ;;
-both) MODELS=$RR_HQ_MODELS ;;
-*)
-    case " $RR_HQ_MODELS " in
-    *" $MODEL_ARG "*) MODELS=$MODEL_ARG ;;
-    *) usage_error "unknown model '$MODEL_ARG' (expected 1.7b, 0.6b or both)" ;;
-    esac
-    ;;
-esac
-if [ "$MODE" = uninstall ] && [ -n "$MODEL_ARG" ]; then usage_error "--uninstall removes everything; it takes no --model"; fi
-if [ "$MODE" = install ] && [ -z "$MODELS" ]; then MODELS=$RR_HQ_DEFAULT_MODEL; fi
+MODELS=$RR_HQ_MODELS # what an install installs and --check verifies
 
 # ── Failure reporting, signals, the lock ─────────────────────────────
 ERR_FILE=$(mktemp "${TMPDIR:-/tmp}/rr-hq-error.XXXXXX") || {
-    echo "ERROR: mktemp failed" >&2
-    exit 1
-}
-VERIFIED_FILE=$(mktemp "${TMPDIR:-/tmp}/rr-hq-verified.XXXXXX") || {
     echo "ERROR: mktemp failed" >&2
     exit 1
 }
@@ -177,7 +171,17 @@ descendants() { # <pid>: its child processes, recursively
 }
 
 stop_children() {
-    local tree
+    local tree job
+    # A signal can arrive between `cmd &` and the `X_PID=$!` after it (bash runs the trap in between):
+    # every background job of this shell goes too, with its descendants, not only the recorded ones.
+    for job in $(jobs -p 2>/dev/null || true); do
+        if [ "$job" != "$CHILD_PID" ] && [ "$job" != "$CURL_PID" ] && [ "$job" != "$SRV_PID" ]; then
+            tree=$(descendants "$job")
+            # shellcheck disable=SC2086 # a list of pids
+            kill -TERM "$job" $tree 2>/dev/null || true
+            wait "$job" 2>/dev/null || true
+        fi
+    done
     if [ -n "$CHILD_PID" ]; then
         tree=$(descendants "$CHILD_PID") # before the kill: orphans would be out of reach
         # shellcheck disable=SC2086 # a list of pids
@@ -217,7 +221,7 @@ on_exit() {
         message=$(cat "$ERR_FILE" 2>/dev/null || true)
         if [ -z "$message" ]; then message="install-hq.sh failed${RR_STEP_LABEL:+ in $RR_STEP_LABEL} (exit status $status)"; fi
     fi
-    rm -f "$ERR_FILE" "$VERIFIED_FILE" || true # before the event: nothing is left behind whatever happens to it
+    rm -f "$ERR_FILE" || true # before the event: nothing is left behind whatever happens to it
     if [ -n "$message" ]; then emit "{\"event\":\"error\",\"message\":$(json_str "$message")}"; fi
     exit "$status"
 }
@@ -320,32 +324,11 @@ hq_files() { # <model>: "path bytes sha256" lines
 }
 hq_model_bytes() { hq_files "$1" | awk '{s += $2} END {printf "%d\n", s}'; }
 
-# hq_verified <file> <bytes> <sha256>: the file matches. Each inode is hashed once per run (hardlinks).
+# hq_verified <file> <bytes> <sha256>: the file (not a symlink) matches.
 hq_verified() {
-    local id
     [ -f "$1" ] && [ ! -L "$1" ] || return 1
     [ "$(rr_size "$1")" = "$2" ] || return 1
-    id=$(stat -f '%d:%i' "$1") || return 1
-    if grep -qxF "$id $3" "$VERIFIED_FILE"; then return 0; fi
-    [ "$(rr_sha256 "$1")" = "$3" ] || return 1
-    printf '%s %s\n' "$id" "$3" >>"$VERIFIED_FILE"
-}
-
-# hq_twin <sha256> <dest>: prints an installed, verified file with these bytes other than <dest>.
-hq_twin() {
-    local m path size sha f
-    for m in $RR_HQ_MODELS; do
-        while read -r path size sha; do
-            [ "$sha" = "$1" ] || continue
-            f="$HQ/models/$(hq_dir "$m")/$path"
-            [ "$f" != "$2" ] || continue
-            if hq_verified "$f" "$size" "$sha"; then
-                printf '%s\n' "$f"
-                return 0
-            fi
-        done <<<"$(hq_files "$m")"
-    done
-    return 1
+    [ "$(rr_sha256 "$1")" = "$3" ]
 }
 
 emit_download() { # <label> <done> <total>
@@ -417,45 +400,34 @@ hq_download() {
   The download was deleted; nothing was installed."
 }
 
-# hq_install_model <model>: every pinned file of the model, verified; returns the number of files fetched.
+# hq_install_model <model>: every pinned file of the model, verified.
 hq_install_model() {
-    local m=$1 dir path size sha dest twin fetched=0 linked=0 kept=0
+    local m=$1 dir path size sha dest fetched=0 kept=0
     dir="$HQ/models/$(hq_dir "$m")"
     rr_note "$m: $(hq_repo "$m") at $(hq_revision "$m") -> $dir"
     while read -r -u 9 path size sha; do
         dest="$dir/$path"
+        if hq_verified "$dest" "$size" "$sha"; then
+            kept=$((kept + 1))
+            continue
+        fi
+        mark_unfinished # this model file changes
         if [ -e "$dest" ] || [ -L "$dest" ]; then
-            if hq_verified "$dest" "$size" "$sha"; then
-                kept=$((kept + 1))
-                continue
-            fi
             rr_warn "$(hq_dir "$m")/$path does not match its pinned size and sha256 (corrupt or changed): replacing it"
             rm -f "$dest" || rr_die "cannot remove $dest"
-        fi
-        mkdir -p "$(dirname "$dest")" || rr_die "cannot create $(dirname "$dest")"
-        if twin=$(hq_twin "$sha" "$dest"); then
-            rm -f "$dest.link"
-            ln "$twin" "$dest.link" || rr_die "cannot hardlink $twin to $dest"
-            mv -f "$dest.link" "$dest" || rr_die "cannot move $dest.link into place"
-            rr_note "$path: hardlinked to the identical ${twin#"$HQ"/models/}"
-            hq_verified "$dest" "$size" "$sha" || rr_die "$dest does not verify after linking"
-            linked=$((linked + 1))
-            continue
         fi
         hq_download "https://huggingface.co/$(hq_repo "$m")/resolve/$(hq_revision "$m")/$path" "$dest" "$size" "$sha" \
             "$(hq_dir "$m")/$path"
         fetched=$((fetched + 1))
     done 9<<<"$(hq_files "$m")"
-    rr_note "$m: $kept files already verified, $linked hardlinked, $fetched downloaded; $(rr_mb "$(hq_model_bytes "$m")") MB, every file sha256-verified"
+    rr_note "$m: $kept files already verified, $fetched downloaded; $(rr_mb "$(hq_model_bytes "$m")") MB, every file sha256-verified"
 }
 
-# Bytes still to download for the given models (a file both share counts once; .part bytes are done).
+# Bytes still to download for the given models (.part bytes are done).
 hq_missing_bytes() {
-    local m path size sha dest have total=0 seen=" "
+    local m path size sha dest have total=0
     for m in "$@"; do
         while read -r path size sha; do
-            case "$seen" in *" $sha "*) continue ;; esac
-            seen="$seen$sha "
             dest="$HQ/models/$(hq_dir "$m")/$path"
             if [ -f "$dest" ] && [ "$(rr_size "$dest")" = "$size" ]; then continue; fi
             have=0
@@ -513,9 +485,30 @@ hq_owns_venv() {
     home=$(sed -n 's/^home *= *//p' "$HQ/venv/pyvenv.cfg" 2>/dev/null | head -1)
     [ -n "$home" ] && [ -d "$HQ/python/bin" ] && [ "$home" -ef "$HQ/python/bin" ]
 }
+# What python/, venv/ and python.partial/ hold at their top level when this script made them (python-build-standalone's
+# layout and the markers; a venv's layout, where wheels may add share/ or etc/; the extraction's python/).
+PYTHON_ENTRIES=(bin include lib share .readread-python .readread-manifest .DS_Store)
+VENV_ENTRIES=(bin include lib share etc pyvenv.cfg .readread-hq-venv .gitignore .DS_Store)
+# foreign_entries <dir> <allowed name>...: prints each top-level entry of <dir> that is none of them, as
+# <dir name>/<entry>; a <dir> that is not a directory (or is a symlink) is printed itself.
+foreign_entries() {
+    local dir=$1 entry
+    shift
+    if [ ! -d "$dir" ] || [ -L "$dir" ]; then
+        printf '%s\n' "${dir##*/}"
+        return 0
+    fi
+    for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        case " $* " in *" ${entry##*/} "*) ;; *) printf '%s/%s\n' "${dir##*/}" "${entry##*/}" ;; esac
+    done
+}
 
 # hq_foreign [all]: prints what in $HQ this script did not create, one entry per line (nothing: all ours). With
 # "all", the files in the model folders too (they go with --uninstall; an install only touches the pinned ones).
+# A folder in models/ other than the model's is named as UNUSED_MODEL: older versions of this script could add
+# a second model there, which this one neither installs nor removes.
+UNUSED_MODEL="a model folder this version does not use"
 hq_foreign() {
     local entry m dirs
     [ -d "$HQ" ] || return 0
@@ -523,9 +516,22 @@ hq_foreign() {
     while IFS= read -r entry; do
         [ -n "$entry" ] || continue
         case "${entry##*/}" in
-        python) hq_owns_python || printf 'python/ (not a Python this script installed)\n' ;;
-        venv) hq_owns_venv || printf 'venv/ (not a venv of %s/python)\n' "$HQ" ;;
-        python.partial | models | install.json | install.json.tmp | .lock | .tmp | .DS_Store) ;;
+        python)
+            if hq_owns_python; then
+                foreign_entries "$HQ/python" "${PYTHON_ENTRIES[@]}"
+            else
+                printf 'python/ (not a Python this script installed)\n'
+            fi
+            ;;
+        venv)
+            if hq_owns_venv; then
+                foreign_entries "$HQ/venv" "${VENV_ENTRIES[@]}"
+            else
+                printf 'venv/ (not a venv of %s/python)\n' "$HQ"
+            fi
+            ;;
+        python.partial) foreign_entries "$HQ/python.partial" python .DS_Store ;; # the extraction: python/ only
+        models | install.json | install.json.tmp | install.json.prev | .lock | .tmp | .DS_Store) ;;
         *) printf '%s\n' "${entry##*/}" ;;
         esac
     done <<<"$(find "$HQ" -mindepth 1 -maxdepth 1 -print)"
@@ -534,7 +540,15 @@ hq_foreign() {
             [ -n "$entry" ] || continue
             case "$dirs" in
             *" ${entry##*/} "*) ;;
-            *) [ "${entry##*/}" = .DS_Store ] || printf 'models/%s\n' "${entry##*/}" ;;
+            *)
+                if [ "${entry##*/}" = .DS_Store ]; then
+                    :
+                elif [ -d "$entry" ] && [ ! -L "$entry" ]; then
+                    printf 'models/%s (%s)\n' "${entry##*/}" "$UNUSED_MODEL"
+                else
+                    printf 'models/%s\n' "${entry##*/}"
+                fi
+                ;;
             esac
         done <<<"$(find "$HQ/models" -mindepth 1 -maxdepth 1 -print)"
         if [ "${1:-}" = all ]; then
@@ -544,7 +558,7 @@ hq_foreign() {
                     hq_files "$m" | awk '{print "P " $1}'
                     (cd "$HQ/models/$(hq_dir "$m")" && find . \( -type f -o -type l \) -print) | sed 's|^\./|F |'
                 } | awk -v dir="models/$(hq_dir "$m")/" '
-                    substr($0, 1, 2) == "P " { p = substr($0, 3); ok[p] = 1; ok[p ".part"] = 1; ok[p ".link"] = 1; next }
+                    substr($0, 1, 2) == "P " { p = substr($0, 3); ok[p] = 1; ok[p ".part"] = 1; next }
                     { path = substr($0, 3); name = path; sub(/.*\//, "", name); if (!(path in ok) && name != ".DS_Store") print dir path }'
             done
         fi
@@ -558,13 +572,16 @@ hq_foreign() {
 }
 # refuse_foreign <what we were about to do> [all]: dies when $HQ holds anything hq_foreign names.
 refuse_foreign() {
-    local list count
+    local list count hint=""
     list=$(hq_foreign "${2:-}")
     [ -n "$list" ] || return 0
     count=$(printf '%s\n' "$list" | wc -l | tr -d ' ')
+    case "$list" in
+    *"($UNUSED_MODEL)"*) hint=" ReadRead uses only the $RR_HQ_MODELS model now: delete the other model's folder (an older version installed it), then run this again." ;;
+    esac
     list=$(printf '%s\n' "$list" | head -8 | paste -sd ',' - | sed 's/,/, /g')
     if [ "$count" -gt 8 ]; then list="$list and $((count - 8)) more"; fi
-    rr_die "$HQ holds files install-hq.sh did not create ($list); $1"
+    rr_die "$HQ holds files install-hq.sh did not create ($list); $1$hint"
 }
 
 venv_stamp() {
@@ -723,8 +740,7 @@ smoke() {
     rm -rf "$dir"
 }
 
-# write_install_json <model>...: install.json with these models added to the ones it already lists (those whose
-# folder is still there), written atomically.
+# write_install_json <model>...: install.json listing these models, written atomically.
 write_install_json() {
     local m specs=()
     for m in "$@"; do
@@ -732,28 +748,18 @@ write_install_json() {
     done
     "$PY" -I -B -c '
 import json, os, sys
-path, models_dir, python, lock_sha, now, known, *specs = sys.argv[1:]
-known = known.split()
+path, python, lock_sha, now, *specs = sys.argv[1:]
 models = {}
-try:
-    with open(path, encoding="utf-8") as f:
-        old = json.load(f).get("models")
-    if isinstance(old, dict):
-        models = {k: v for k, v in old.items() if k in known and isinstance(v, dict)
-                  and isinstance(v.get("dir"), str) and os.path.isdir(os.path.join(models_dir, v["dir"]))}
-except (OSError, ValueError, AttributeError):
-    pass
 for spec in specs:
     key, repo, revision, folder, files, size = spec.split("|")
     models[key] = {"repo": repo, "revision": revision, "dir": folder, "files": int(files), "bytes": int(size)}
-data = {"version": 1, "python": python, "lock_sha256": lock_sha,
-        "models": {k: models[k] for k in known if k in models}, "installed_at": now}
+data = {"version": 1, "python": python, "lock_sha256": lock_sha, "models": models, "installed_at": now}
 with open(path + ".tmp", "w", encoding="utf-8") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 os.replace(path + ".tmp", path)
-' "$HQ/install.json" "$HQ/models" "$RR_PY_VERSION+$RR_PY_RELEASE" "$(rr_sha256 "$RR_HQ_LOCK_FILE")" \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RR_HQ_MODELS" "${specs[@]}" 3>&- || rr_die "cannot write $HQ/install.json"
+' "$HQ/install.json" "$RR_PY_VERSION+$RR_PY_RELEASE" "$(rr_sha256 "$RR_HQ_LOCK_FILE")" \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${specs[@]}" 3>&- || rr_die "cannot write $HQ/install.json"
 }
 
 # ── --uninstall ──────────────────────────────────────────────────────
@@ -767,6 +773,9 @@ if [ "$MODE" = uninstall ]; then
     take_lock # no install may start while the tree goes
     refuse_foreign "not removing anything. Delete it yourself if it is really the HQ install." all
     size=$(du -sk "$HQ" | awk '{print $1}')
+    # A removal stopped half way cannot be resumed and would leave a broken install: from here on a signal
+    # is ignored (rm inherits that) and the run finishes with its done event. SIGKILL still ends it.
+    trap '' INT TERM HUP
     rm -rf "$HQ" || rr_die "could not remove all of $HQ"
     LOCKED=0 # it went with the tree
     [ ! -e "$HQ" ] || rr_die "$HQ is still there after rm -rf"
@@ -794,24 +803,22 @@ if [ "$MODE" = check ]; then
         die "it has no models object\n" unless ref $d->{models} eq "HASH";
         print join(" ", sort keys %{$d->{models}}), "\n", ($d->{lock_sha256} // ""), "\n";
     ' "$HQ/install.json" 2>&1); then
-        problem "install.json is missing or unreadable: $(printf '%s' "$listed" | tail -1)"
+        unfinished=""
+        if [ ! -e "$HQ/install.json" ] && [ -e "$HQ/install.json.prev" ]; then
+            unfinished=" (an install or repair stopped before it finished: run install-hq.sh again)"
+        fi
+        problem "install.json is missing or unreadable: $(printf '%s' "$listed" | tail -1)$unfinished"
         listed=""
     fi
     listed_models=$(printf '%s\n' "$listed" | sed -n 1p)
     listed_lock=$(printf '%s\n' "$listed" | sed -n 2p)
-    if [ -z "$MODELS" ]; then # the listed ones, in versions.sh order
-        for m in $RR_HQ_MODELS; do
-            case " $listed_models " in *" $m "*) MODELS="${MODELS:+$MODELS }$m" ;; esac
-        done
-    fi
-    [ -n "$MODELS" ] || problem "no model is installed"
-    for m in $MODELS; do
+    for m in $MODELS; do # another model's entry (an older version's) is not checked
         case " $listed_models " in *" $m "*) ;; *) problem "install.json does not list model $m" ;; esac
     done
     if [ -n "$listed" ] && [ "$listed_lock" != "$(rr_sha256 "$RR_HQ_LOCK_FILE")" ]; then
         problem "install.json records another requirements-hq.lock (the venv is out of date; run install-hq.sh)"
     fi
-    rr_note "models: ${MODELS:-none}"
+    rr_note "model: $MODELS (install.json lists: ${listed_models:-nothing})"
     rr_step 2/4 "Python and venv"
     if python_ok; then rr_note "CPython $RR_PY_VERSION ($RR_PY_RELEASE), every file as extracted: ok"; else problem "python/ is missing, modified or not CPython $RR_PY_VERSION+$RR_PY_RELEASE"; fi
     if venv_ok; then rr_note "venv matches requirements-hq.lock (installed set, every file's sha256, pip check): ok"; else problem "venv/ is missing, incomplete, modified or built from other inputs"; fi
@@ -832,14 +839,14 @@ if [ "$MODE" = check ]; then
     rm -rf "$hf_scratch"
     if [ -n "$problems" ]; then rr_die "the HQ install at $HQ has problems:$problems"; fi
     echo ""
-    echo "=== HQ install OK: $HQ (models: $MODELS) ==="
+    echo "=== HQ install OK: $HQ (model: $MODELS) ==="
     finish "{\"event\":\"done\",\"home\":$(json_str "$HQ"),\"models\":[$(for m in $MODELS; do printf '"%s",' "$m"; done | sed 's/,$//')]}"
     exit 0
 fi
 
 # ── Install ──────────────────────────────────────────────────────────
 START_TIME=$(date +%s)
-echo "=== ReadRead HQ engine (Qwen3-TTS): $HQ, models: $MODELS ==="
+echo "=== ReadRead HQ engine (Qwen3-TTS): $HQ, model: $MODELS ==="
 rr_require_apple_silicon
 rr_require_cmds curl tar plutil perl mkfifo
 [ -f "$SERVER_DIR/tts_server.py" ] && [ -f "$SERVER_DIR/readread_tts/engine_qwen.py" ] ||
@@ -854,10 +861,19 @@ if [ -d "$HQ" ]; then
 fi
 take_lock
 refuse_foreign "$FOREIGN_HINT"
+# mark_unfinished, called before the first change to python/, venv/ or a model file: from then until step 6
+# install.json is install.json.prev. A run that stops after a change (cancelled, a download or pip failing) leaves an
+# install that reads as unfinished (the app: damaged, Repair), never the record of a finished install whose venv or
+# model files it was replacing; one that stops before it changed anything leaves the install as it was.
+mark_unfinished() {
+    if [ -e "$HQ/install.json" ] || [ -L "$HQ/install.json" ]; then
+        mv -f "$HQ/install.json" "$HQ/install.json.prev" || rr_die "cannot move $HQ/install.json aside"
+    fi
+}
 rm -rf "$HQ/.tmp"
 mkdir -p "$HQ/.tmp" "$HQ/models" || rr_die "cannot create $HQ"
 
-# Enough disk space for what is missing (python and the venv about 0.6 GB, plus the model files).
+# Enough disk space for what is missing (python and the venv about 700 MB, plus the model files).
 # shellcheck disable=SC2086 # $MODELS is a list of model names
 NEED=$(hq_missing_bytes $MODELS)
 PYTHON_OK=0
@@ -879,6 +895,7 @@ else
     TARBALL="$RR_CACHE_DIR/downloads/$RR_PY_ASSET"
     emit_download "$RR_PY_ASSET" "$RR_PY_SIZE" "$RR_PY_SIZE"
     if [ -e "$HQ/python" ]; then rr_note "replacing $HQ/python (different or unknown version, or modified files)"; fi
+    mark_unfinished
     rr_extract_python "$TARBALL" "$HQ/python"
     python_manifest >"$HQ/python/.readread-manifest" || rr_die "cannot list $HQ/python"
     printf '%s\n' "$PY_STAMP" >"$HQ/python/.readread-python"
@@ -890,6 +907,7 @@ if venv_ok; then
     rr_note "venv is up to date with requirements-hq.lock (installed set, every file's sha256 and pip check verified)"
 else
     if [ -e "$HQ/venv" ]; then rr_note "rebuilding $HQ/venv (inputs changed, incomplete or modified)"; fi
+    mark_unfinished
     rm -rf "$HQ/venv"
     "$PY" -I -m venv "$HQ/venv" 3>&- || rr_die "cannot create the venv in $HQ/venv"
     # In the background: a signal stops pip at once. (rr_pip closes fd 3 for pip, so no pip process holds
@@ -916,12 +934,13 @@ done
 rr_step 6/$STEPS_INSTALL "install.json"
 # shellcheck disable=SC2086 # $MODELS is a list of model names
 write_install_json $MODELS
+rm -f "$HQ/install.json.prev" || rr_warn "cannot remove $HQ/install.json.prev"
 rm -rf "$HQ/.tmp"
 rr_note "$HQ/install.json lists: $("$PY" -I -c 'import json, sys; print(", ".join(json.load(open(sys.argv[1]))["models"]))' "$HQ/install.json")"
 
 echo ""
 echo "=== HQ engine installed ($(($(date +%s) - START_TIME)) s): $HQ ==="
-echo "  python/  $(du -sh "$HQ/python" | awk '{print $1}')   venv/  $(du -sh "$HQ/venv" | awk '{print $1}')   models/  $(du -sh "$HQ/models" | awk '{print $1}') (hardlinked files counted once)"
+echo "  python/  $(du -sh "$HQ/python" | awk '{print $1}')   venv/  $(du -sh "$HQ/venv" | awk '{print $1}')   models/  $(du -sh "$HQ/models" | awk '{print $1}')"
 echo "  Run the server: READREAD_TOKEN=\$(openssl rand -hex 32) \"$VENV_PY\" -I -B \"$SERVER_DIR/tts_server.py\" \\"
-echo "      --engine qwen --model ${MODELS%% *} --models-dir \"$HQ/models\" --preload zh,en"
+echo "      --engine qwen --model $MODELS --models-dir \"$HQ/models\" --preload zh,en"
 finish "{\"event\":\"done\",\"home\":$(json_str "$HQ"),\"models\":[$(for m in $MODELS; do printf '"%s",' "$m"; done | sed 's/,$//')]}"

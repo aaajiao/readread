@@ -12,7 +12,8 @@ import XCTest
 /// `LocalizedStringKey(…)`, outside `//` comments, and turns each `\(…)` into `%@`: the UI code
 /// interpolates strings only, so `%@` is exactly the key's specifier. The keys must be in
 /// `zh-Hans.lproj/Localizable.strings`; a key the content track (P6) owns may instead be in
-/// `Content.strings` (its specifiers are compared loosely there).
+/// `Content.strings`, one of the engine track (v0.5.0) in `Engine.strings` (their specifiers are
+/// compared loosely there).
 ///
 /// What it cannot see: strings built at runtime (variables, concatenation, a ternary between two
 /// literals, which Swift may type as `String` and so never look up), multi-line and raw literals,
@@ -271,7 +272,8 @@ final class LocalizationCoverageTests: XCTestCase {
     func testEveryUIStringHasAChineseTranslation() throws {
         let localizable = try XCTUnwrap(try Self.table("Localizable"), "zh-Hans.lproj/Localizable.strings is missing")
         let content = try Self.table("Content") ?? [:]
-        let looseContent = Set(content.keys.map(Self.looseKey))
+        let engine = try Self.table("Engine") ?? [:]
+        let looseContent = Set((Array(content.keys) + Array(engine.keys)).map(Self.looseKey))
         let scanned = try Self.scannedKeys()
         XCTAssertGreaterThan(scanned.count, 100, "the scan finds the UI strings")
         var missing: [String] = []

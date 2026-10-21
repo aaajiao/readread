@@ -1,20 +1,27 @@
 import Foundation
 
 /// The server's single stdout line once it is serving:
-/// `READY {"port":<int>,"pid":<int>,"api":2,"loaded":["zh"]}`
+/// `READY {"port":<int>,"pid":<int>,"api":2,"loaded":["zh"],"engine":"kokoro"}`; the Qwen
+/// server adds `"model":"1.7b"`. A server older than the engine field sends neither.
 struct ReadyInfo: Codable, Equatable, Sendable {
     let port: Int
     let pid: Int
     let api: Int
     let loaded: [String]
+    /// "kokoro" or "qwen".
+    let engine: String?
+    /// The Qwen model ("1.7b"); nil for Kokoro.
+    let model: String?
 
-    private enum CodingKeys: String, CodingKey { case port, pid, api, loaded }
+    private enum CodingKeys: String, CodingKey { case port, pid, api, loaded, engine, model }
 
-    init(port: Int, pid: Int, api: Int, loaded: [String]) {
+    init(port: Int, pid: Int, api: Int, loaded: [String], engine: String? = nil, model: String? = nil) {
         self.port = port
         self.pid = pid
         self.api = api
         self.loaded = loaded
+        self.engine = engine
+        self.model = model
     }
 
     init(from decoder: any Decoder) throws {
@@ -23,6 +30,8 @@ struct ReadyInfo: Codable, Equatable, Sendable {
         pid = try c.decode(Int.self, forKey: .pid)
         api = try c.decode(Int.self, forKey: .api)
         loaded = try c.decodeIfPresent([String].self, forKey: .loaded) ?? []
+        engine = try c.decodeIfPresent(String.self, forKey: .engine)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
     }
 }
 

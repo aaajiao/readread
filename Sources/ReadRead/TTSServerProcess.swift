@@ -1,9 +1,9 @@
 import Foundation
 import Observation
 
-/// Everything the server lifecycle touches outside itself, injectable so the
-/// whole lifecycle (start, READY/FATAL, crashes, backoff, idle shutdown, stop)
-/// is unit-tested without Python. Same seam style as `WebExtractor.fetchWithRetry`.
+/// Everything the server lifecycle (and `HQInstaller`'s runs) touch outside themselves,
+/// injectable so the whole lifecycle (start, READY/FATAL, crashes, backoff, idle shutdown,
+/// stop) is unit-tested without Python. Same seam style as `WebExtractor.fetchWithRetry`.
 @MainActor
 struct ServerEnvironment {
     var launcher: any ProcessLauncher
@@ -43,6 +43,62 @@ struct ServerPolicy: Sendable {
     func backoff(afterCrashes count: Int) -> TimeInterval {
         count <= 0 ? 0 : pow(2, Double(count - 1))
     }
+
+    /// The Qwen server: a cold start reads 3 GB of model and compiles Metal shaders, and it holds
+    /// 3–4 GB of memory while it runs, so it gets longer to start and goes 5 minutes after the
+    /// last synthesis. Crashes and backoff as for Kokoro.
+    static let qwen = ServerPolicy(startTimeout: .seconds(180), idleTimeout: 5 * 60, idleCheckInterval: .seconds(30))
+}
+
+/// Which server a `TTSServerProcess` runs. Each flavor has its own lifecycle object: the two
+/// servers never share a process, a log or a policy.
+enum ServerFlavor: Equatable, Sendable {
+    /// The bundled Kokoro server (today's launch, the default).
+    case kokoro
+    /// Qwen3-TTS from the high-quality install: its venv's python, `--engine qwen --model 1.7b`.
+    case qwen(HQInstallation)
+
+    var engine: EngineKind {
+        switch self {
+        case .kokoro: .kokoro
+        case .qwen: .qwen
+        }
+    }
+
+    /// `SpeechSynthesizer.engineID` of its synthesizer.
+    var engineID: String {
+        switch self {
+        case .kokoro: "kokoro"
+        case .qwen: QwenModel.engineID
+        }
+    }
+
+    /// Kokoro synthesizes at the requested speed; Qwen always at 1.0 (the player time-stretches).
+    var honoursSpeed: Bool { self == .kokoro }
+
+    /// A FATAL line before READY. Kokoro's is the server's message; the Qwen server's means the
+    /// high-quality install cannot run it (a package or a model file missing or damaged, which
+    /// installing again repairs), so it is `.hqUnavailable`, naming Settings, with the message as it is.
+    func startupFatal(_ message: String) -> TTSError {
+        switch self {
+        case .kokoro: .serverFatal(message)
+        case .qwen: .hqUnavailable(message)
+        }
+    }
+
+    /// Why `info` is not this flavor's READY line, naming both sides; nil when it is. Kokoro
+    /// accepts a server that names no engine (older than the field).
+    func readyMismatch(_ info: ReadyInfo) -> String? {
+        switch self {
+        case .kokoro:
+            guard let engine = info.engine, engine != EngineKind.kokoro.rawValue else { return nil }
+            return "READY reports engine \(engine), model \(info.model ?? "none"); ReadRead started engine kokoro"
+        case .qwen:
+            guard info.engine != EngineKind.qwen.rawValue || info.model != QwenModel.id else { return nil }
+            return "READY reports engine \(info.engine ?? "none"), model \(info.model ?? "none"); "
+                + "ReadRead started engine qwen, model \(QwenModel.id)"
+        }
+    }
 }
 
 /// A ready server: where it listens and the token it requires.
@@ -52,6 +108,9 @@ struct ServerEndpoint: Equatable, Sendable {
     let pid: Int32
     let loaded: [String]
     let generation: Int
+    /// What its READY line named (nil from a server older than the fields).
+    var engine: String? = nil
+    var model: String? = nil
 
     var baseURL: URL { URL(string: "http://127.0.0.1:\(port)")! }
 }
@@ -100,7 +159,8 @@ final class ServerLaunch {
 
 /// Owns the Python TTS server process (main actor): lazy start, READY/FATAL
 /// handshake, crash detection with lazy restart and backoff, giving up after
-/// repeated crashes, idle shutdown, and SIGTERM → SIGKILL stop.
+/// repeated crashes, idle shutdown, and SIGTERM → SIGKILL stop. One instance per
+/// `ServerFlavor`: Kokoro's, and Qwen's when the high-quality engine is in use.
 @MainActor
 @Observable
 final class TTSServerProcess {
@@ -121,11 +181,12 @@ final class TTSServerProcess {
     private(set) var endpoint: ServerEndpoint?
 
     @ObservationIgnored let policy: ServerPolicy
+    @ObservationIgnored let flavor: ServerFlavor
     @ObservationIgnored private let env: ServerEnvironment
     @ObservationIgnored private var current: ServerLaunch?
     /// Launches detached from `current` while still alive (start timeout, FATAL,
-    /// invalid READY, an unreachable server), until their exit is recorded:
-    /// stop() and stopSynchronously() end them too, and they count as running.
+    /// invalid READY, an unreachable server, a stop() still waiting), until their exit
+    /// is recorded: stop() and stopSynchronously() end them too, and they count as running.
     @ObservationIgnored private var terminating: [ObjectIdentifier: ServerLaunch] = [:]
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var crashTimes: [TimeInterval] = []
@@ -144,12 +205,17 @@ final class TTSServerProcess {
     /// Every process launched, in order (self-test: each one must be gone).
     @ObservationIgnored private(set) var launchedPIDs: [Int32] = []
 
-    init(environment: ServerEnvironment, policy: ServerPolicy = ServerPolicy()) {
+    /// `policy` defaults to the flavor's: `ServerPolicy()` for Kokoro, `.qwen` for Qwen.
+    init(environment: ServerEnvironment, flavor: ServerFlavor = .kokoro, policy: ServerPolicy? = nil) {
         self.env = environment
-        self.policy = policy
+        self.flavor = flavor
+        self.policy = policy ?? (flavor == .kokoro ? ServerPolicy() : .qwen)
     }
 
-    var logPath: String { env.directories.logFile }
+    /// `tts-server.log` for Kokoro, `tts-server-qwen.log` for Qwen.
+    var logPath: String {
+        flavor == .kokoro ? env.directories.logFile : env.directories.qwenLogFile
+    }
     var directories: RuntimeDirectories { env.directories }
     /// The current server or one still being terminated is alive.
     var isProcessRunning: Bool {
@@ -191,11 +257,18 @@ final class TTSServerProcess {
     /// never duplicated.
     @discardableResult
     func restart(preload: [SpeechLanguage] = []) async throws -> ServerEndpoint {
+        resetFailure()
+        await stop()
+        return try await ensureRunning(preload: preload)
+    }
+
+    /// The user chose this engine again: past crashes and a failure that keeps it from starting
+    /// (FATAL, too many crashes) are forgotten, so the next request starts a fresh server. A server
+    /// running or starting is left as it is.
+    func resetFailure() {
         crashTimes.removeAll()
         lastError = nil
         if phase == .failed { phase = .stopped }
-        await stop()
-        return try await ensureRunning(preload: preload)
     }
 
     private func beginStart(preload: [SpeechLanguage]) {
@@ -254,7 +327,7 @@ final class TTSServerProcess {
 
         let paths: TTSServerPaths
         do {
-            paths = try TTSServerPaths.resolve(env.pathContext, fileSystem: env.fileSystem)
+            paths = try resolvePaths()
         } catch {
             throw registerFailure(error, countsAsCrash: false)
         }
@@ -271,8 +344,8 @@ final class TTSServerProcess {
         }
         current = launch
         let configuration = launchConfiguration(paths: paths, token: launch.token, preload: preload)
-        ServerLog.note("launching TTS server (\(paths.source.rawValue)): \(configuration.executable) "
-            + configuration.arguments.joined(separator: " "), to: logHandle)
+        ServerLog.note("launching \(flavor == .kokoro ? "TTS" : "Qwen TTS") server (\(paths.source.rawValue)): "
+            + "\(configuration.executable) " + configuration.arguments.joined(separator: " "), to: logHandle)
 
         let handle: any ServerProcessHandle
         do {
@@ -293,8 +366,22 @@ final class TTSServerProcess {
         return try await waitForReady(launch)
     }
 
+    private func resolvePaths() throws(TTSError) -> TTSServerPaths {
+        switch flavor {
+        case .kokoro:
+            try TTSServerPaths.resolve(env.pathContext, fileSystem: env.fileSystem)
+        case .qwen(let installation):
+            try TTSServerPaths.resolveQwen(env.pathContext, installation: installation, fileSystem: env.fileSystem)
+        }
+    }
+
+    /// Kokoro: `-I -B <server>/tts_server.py --models-dir <models> [--preload …]`; Qwen adds
+    /// `--engine qwen --model 1.7b` before `--models-dir <hq>/models`. Both get the same clean
+    /// environment.
     func launchConfiguration(paths: TTSServerPaths, token: String, preload: [SpeechLanguage]) -> LaunchConfiguration {
-        var arguments = ["-I", "-B", paths.serverScript, "--models-dir", paths.modelsDirectory]
+        var arguments = ["-I", "-B", paths.serverScript]
+        if case .qwen = flavor { arguments += ["--engine", EngineKind.qwen.rawValue, "--model", QwenModel.id] }
+        arguments += ["--models-dir", paths.modelsDirectory]
         let routes = SpeechLanguage.allCases.filter(preload.contains)
         if !routes.isEmpty {
             arguments += ["--preload", routes.map(\.rawValue).joined(separator: ",")]
@@ -345,33 +432,42 @@ final class TTSServerProcess {
                 ServerLog.note("ignoring extra READY line: \(line.prefix(300))", to: launch.log)
                 return
             }
+            if let mismatch = flavor.readyMismatch(info) {
+                rejectStartup(launch, protocolError: mismatch)
+                return
+            }
             ServerLog.note("server ready on port \(info.port) (pid \(info.pid), loaded \(info.loaded))", to: launch.log)
             let endpoint = ServerEndpoint(
                 port: info.port, token: launch.token, pid: Int32(clamping: info.pid),
-                loaded: info.loaded, generation: launch.generation)
+                loaded: info.loaded, generation: launch.generation, engine: info.engine, model: info.model)
             resolveStartup(launch, .success(endpoint))
         case .fatal(let message):
             launch.fatalMessage = message
             ServerLog.note("server reported FATAL: \(message)", to: launch.log)
             guard launch.outcome == nil else { return }
-            let error = launch === current
-                ? registerFailure(.serverFatal(message), countsAsCrash: false)
-                : TTSError.serverFatal(message)
+            let failure = flavor.startupFatal(message)
+            let error = launch === current ? registerFailure(failure, countsAsCrash: false) : failure
             detachAndTerminate(launch)
             resolveStartup(launch, .failure(error))
         case .invalidReady(let message):
-            ServerLog.note(message, to: launch.log)
-            guard launch.outcome == nil else { return }
-            let error = launch === current
-                ? registerFailure(.protocolError(message), countsAsCrash: false)
-                : TTSError.protocolError(message)
-            detachAndTerminate(launch)
-            resolveStartup(launch, .failure(error))
+            rejectStartup(launch, protocolError: message)
         case .junk(let text):
             if !text.isEmpty {
                 ServerLog.note("unexpected stdout line: \(text.prefix(300))", to: launch.log)
             }
         }
+    }
+
+    /// A READY line this app cannot use (malformed, another API, another engine or model): the
+    /// start fails without retries and the process is stopped.
+    private func rejectStartup(_ launch: ServerLaunch, protocolError message: String) {
+        ServerLog.note(message, to: launch.log)
+        guard launch.outcome == nil else { return }
+        let error = launch === current
+            ? registerFailure(.protocolError(message), countsAsCrash: false)
+            : TTSError.protocolError(message)
+        detachAndTerminate(launch)
+        resolveStartup(launch, .failure(error))
     }
 
     private func handleExit(_ exit: ProcessExit, of launch: ServerLaunch) {
@@ -473,7 +569,8 @@ final class TTSServerProcess {
 
     /// Stop the server, and any server still being terminated, and wait until
     /// they have exited: close stdin, SIGTERM, then SIGKILL after the grace
-    /// period. Not counted as a crash.
+    /// period. Not counted as a crash. Until its exit the server stays tracked:
+    /// it counts as running, and a second stop() meanwhile waits for it too.
     func stop() async {
         idleTask?.cancel()
         idleTask = nil
@@ -486,6 +583,7 @@ final class TTSServerProcess {
         if let launch {
             launch.expectedExit = true
             resolveStartup(launch, .failure(CancellationError()))
+            trackUntilExit(launch)
             await terminateAndWait(launch)
         }
         for other in detached { await terminateAndWait(other) }
@@ -501,11 +599,13 @@ final class TTSServerProcess {
         endpoint = nil
         if phase != .failed { phase = .stopped }
         cancelPendingStart()
+        let detached = Array(terminating.values)
         if let launch {
             launch.expectedExit = true
             resolveStartup(launch, .failure(CancellationError()))
+            trackUntilExit(launch)
         }
-        let handles = ([launch].compactMap { $0 } + terminating.values).compactMap { item in
+        let handles = ([launch].compactMap { $0 } + detached).compactMap { item in
             item.exit == nil ? item.handle : nil
         }
         guard !handles.isEmpty else { return }
@@ -533,10 +633,16 @@ final class TTSServerProcess {
             idleTask?.cancel()
             idleTask = nil
         }
-        if launch.exit == nil, launch.handle != nil {
-            terminating[ObjectIdentifier(launch)] = launch  // until handleExit records its exit
-        }
+        trackUntilExit(launch)
         Task { await self.terminateAndWait(launch) }
+    }
+
+    /// A launch no longer `current` that has not exited yet: in `terminating` until handleExit
+    /// records its exit.
+    private func trackUntilExit(_ launch: ServerLaunch) {
+        if launch.exit == nil, launch.handle != nil {
+            terminating[ObjectIdentifier(launch)] = launch
+        }
     }
 
     private func terminateAndWait(_ launch: ServerLaunch) async {

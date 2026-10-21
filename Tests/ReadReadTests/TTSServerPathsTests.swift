@@ -179,4 +179,128 @@ final class TTSServerPathsTests: XCTestCase {
         XCTAssertEqual(dirs.cacheDirectory, "/s/cache")
         XCTAssertEqual(dirs.userLexicon, "/s/lex.json")
     }
+
+    func testTheHighQualityEngineHasItsOwnLogsAndInstallerDirectories() {
+        let dirs = RuntimeDirectories(logDirectory: "/s/logs", cacheDirectory: "/s/cache", userLexicon: "/s/lex.json")
+        XCTAssertEqual(dirs.qwenLogFile, "/s/logs/tts-server-qwen.log")
+        XCTAssertEqual(dirs.installerLogFile, "/s/logs/hq-install.log")
+        XCTAssertEqual(dirs.installerTemporaryDirectory, "/s/cache/installer-tmp")
+        XCTAssertEqual(dirs.installerBuildCache, "/s/cache/hq-build")
+        XCTAssertNotEqual(dirs.qwenLogFile, dirs.logFile)
+    }
+
+    // MARK: - Qwen
+
+    private let hqHome = "/hq"
+    private var installation: HQInstallation { HQInstallation(home: hqHome, installedAt: nil, modelBytes: 1) }
+
+    /// The HQ venv's python and the model's folder under `<hq>/models`.
+    private func installHQ(_ fs: FakeFileSystem, python: Bool = true, folder: Bool = true) {
+        if python { fs.addFile(hqHome + "/venv/bin/python3", executable: true) }
+        fs.directories.insert(hqHome + "/models")
+        if folder { fs.directories.insert(hqHome + "/models/" + QwenModel.folder) }
+    }
+
+    func testQwenRunsTheHQVenvWithTheAppsOwnServerCode() throws {
+        let fs = FakeFileSystem()
+        installHQ(fs)
+        fs.installDev(at: "/rr")
+        let paths = try TTSServerPaths.resolveQwen(
+            context(bundle: false, environment: ["READREAD_HOME": "/rr"]), installation: installation, fileSystem: fs)
+        XCTAssertEqual(paths.python, "/hq/venv/bin/python3")
+        XCTAssertEqual(paths.serverDirectory, "/rr/tts_server")
+        XCTAssertEqual(paths.modelsDirectory, "/hq/models")
+        XCTAssertEqual(paths.source, .dev)
+    }
+
+    func testQwenPrefersTheBundlesServerCode() throws {
+        let fs = FakeFileSystem()
+        installHQ(fs)
+        fs.installBundle(at: resources)
+        fs.installDev(at: "/rr")
+        let paths = try TTSServerPaths.resolveQwen(
+            context(bundle: true, environment: ["READREAD_HOME": "/rr"]), installation: installation, fileSystem: fs)
+        XCTAssertEqual(paths.serverDirectory, resources + "/tts_server")
+        XCTAssertEqual(paths.python, "/hq/venv/bin/python3", "never the bundle's own python")
+        XCTAssertEqual(paths.source, .bundle)
+    }
+
+    func testQwenNeedsNoKokoroModelsOrDevPython() throws {
+        let fs = FakeFileSystem()
+        installHQ(fs)
+        fs.addFile("/work/readread/tts_server/tts_server.py")
+        let paths = try TTSServerPaths.resolveQwen(
+            context(bundle: false, environment: ["READREAD_HOME": "/rr"]), installation: installation, fileSystem: fs)
+        XCTAssertEqual(paths.serverDirectory, "/work/readread/tts_server")
+    }
+
+    func testABrokenHQInstallIsHQUnavailableNamingEveryProblem() {
+        let fs = FakeFileSystem()
+        installHQ(fs, python: false, folder: false)
+        fs.addFile("/hq/venv/bin/python3", executable: false)
+        fs.installDev(at: "/rr")
+        XCTAssertThrowsError(try TTSServerPaths.resolveQwen(
+            context(bundle: false, environment: ["READREAD_HOME": "/rr"]), installation: installation, fileSystem: fs)
+        ) { error in
+            guard case .hqUnavailable(let detail) = error as? TTSError else { return XCTFail("\(error)") }
+            XCTAssertEqual(detail, "its Python /hq/venv/bin/python3 is missing or not executable; "
+                + "its model folder /hq/models/\(QwenModel.folder) is missing")
+            XCTAssertFalse(TTSError.hqUnavailable(detail).isResourcesMissing, "Kokoro's setup hint is not for this")
+            XCTAssertTrue(TTSError.hqUnavailable(detail).isServerFailure)
+        }
+    }
+
+    func testQwenWithoutServerCodeIsALaunchFailure() {
+        let fs = FakeFileSystem()
+        installHQ(fs)
+        XCTAssertThrowsError(try TTSServerPaths.resolveQwen(
+            context(bundle: true, environment: ["READREAD_HOME": "/rr"]), installation: installation, fileSystem: fs)
+        ) { error in
+            guard case .launchFailed(let detail) = error as? TTSError else { return XCTFail("\(error)") }
+            XCTAssertEqual(detail, "TTS server code not found (looked for tts_server.py in "
+                + "\(resources)/tts_server, /rr/tts_server, /work/readread/tts_server)")
+        }
+    }
+
+    func testServerDirectoryFollowsTheKokoroOrder() {
+        let fs = FakeFileSystem()
+        let ctx = context(bundle: true, environment: ["READREAD_HOME": "/rr"])
+        XCTAssertEqual(TTSServerPaths.serverCandidates(ctx),
+                       [resources + "/tts_server", "/rr/tts_server", "/work/readread/tts_server"])
+        XCTAssertNil(TTSServerPaths.serverDirectory(ctx, fileSystem: fs))
+        fs.addFile("/work/readread/tts_server/tts_server.py")
+        XCTAssertEqual(TTSServerPaths.serverDirectory(ctx, fileSystem: fs), "/work/readread/tts_server")
+        fs.addFile("/rr/tts_server/tts_server.py")
+        XCTAssertEqual(TTSServerPaths.serverDirectory(ctx, fileSystem: fs), "/rr/tts_server")
+        fs.addFile(resources + "/tts_server/tts_server.py")
+        XCTAssertEqual(TTSServerPaths.serverDirectory(ctx, fileSystem: fs), resources + "/tts_server")
+        // An empty READREAD_HOME never means ~/.readread.
+        XCTAssertEqual(TTSServerPaths.serverCandidates(context(bundle: false, environment: ["READREAD_HOME": ""])),
+                       ["/work/readread/tts_server"])
+    }
+
+    // MARK: - LocalFileSystem reads
+
+    func testLocalFileSystemReadsWholeSmallRegularFilesOnly() throws {
+        let directory = try makeTemporaryDirectory()
+        let fs = LocalFileSystem()
+        let small = directory.appending(path: "small.json").path
+        try Data("{\"a\":1}".utf8).write(to: URL(fileURLWithPath: small))
+        XCTAssertEqual(fs.contents(atPath: small, maxBytes: 7), Data("{\"a\":1}".utf8))
+        XCTAssertNil(fs.contents(atPath: small, maxBytes: 6), "one byte over the limit")
+        XCTAssertNil(fs.contents(atPath: directory.appending(path: "missing").path, maxBytes: 100))
+        XCTAssertNil(fs.contents(atPath: directory.path, maxBytes: 100), "a directory is not read")
+
+        let fifo = directory.appending(path: "fifo").path
+        XCTAssertEqual(mkfifo(fifo, 0o600), 0)
+        XCTAssertNil(fs.contents(atPath: fifo, maxBytes: 100), "a FIFO neither blocks nor counts as a file")
+
+        let link = directory.appending(path: "link.json").path
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: small)
+        XCTAssertEqual(fs.contents(atPath: link, maxBytes: 100), Data("{\"a\":1}".utf8))
+        XCTAssertEqual(fs.resolvingSymlinks(atPath: link), fs.resolvingSymlinks(atPath: small))
+        XCTAssertTrue(fs.resolvingSymlinks(atPath: link).hasSuffix("/small.json"))
+        let missing = directory.appending(path: "nowhere/at/all").path
+        XCTAssertEqual(fs.resolvingSymlinks(atPath: missing), missing)
+    }
 }

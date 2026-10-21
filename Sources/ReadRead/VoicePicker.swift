@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The voice of one language: a button with the voice's name that opens the grouped list
-/// (中文 / English (US) / English (UK)) with ▶ on every row (H8, R4-07).
+/// (中文 / English (US) / English (UK)) with ▶ on every row (H8, R4-07); the voice's name alone
+/// when the engine has only that one (Qwen3-TTS).
 struct VoicePickerButton: View {
     @Bindable var appState: AppState
     let language: SpeechLanguage
@@ -11,6 +12,23 @@ struct VoicePickerButton: View {
 
     var body: some View {
         let voice = appState.voice(for: language)
+        if appState.hasVoiceChoice(for: language) {
+            picker(voice)
+        } else {
+            Text(verbatim: voice.pickerLabel)
+                .font(.callout)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(Text("Qwen3-TTS has one voice for \(VoiceAccent.languageName(language)) text"))
+                .accessibilityLabel(Text("Voice for \(VoiceAccent.languageName(language))"))
+                .accessibilityValue(Text(verbatim: voice.pickerLabel))
+        }
+    }
+
+    private func picker(_ voice: Voice) -> some View {
         Button {
             showsList.toggle()
         } label: {
@@ -80,10 +98,11 @@ struct VoiceListView: View {
 
     var body: some View {
         let selected = appState.voice(for: language)
+        let groups = VoiceGroup.groups(for: language, in: appState.voiceCatalog)
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    ForEach(VoiceGroup.groups(for: language)) { group in
+                    ForEach(groups) { group in
                         Section {
                             ForEach(group.voices) { voice in
                                 row(voice, selected: voice.id == selected.id)
@@ -106,7 +125,13 @@ struct VoiceListView: View {
             }
             .onAppear { proxy.scrollTo(selected.id, anchor: .center) }
         }
-        .frame(width: 250, height: language == .zh ? 150 : 320)
+        .frame(width: 250, height: Self.height(groups: groups))
+    }
+
+    /// Every row in view (Kokoro's Chinese: 150 points), up to 320 points, then it scrolls.
+    static func height(groups: [VoiceGroup]) -> CGFloat {
+        let voices = groups.reduce(0) { $0 + $1.voices.count }
+        return min(320, CGFloat(groups.count) * 28 + CGFloat(voices) * 26 + 18)
     }
 
     private func row(_ voice: Voice, selected: Bool) -> some View {

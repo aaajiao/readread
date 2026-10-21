@@ -1,7 +1,7 @@
 import Foundation
 
-/// The file operations the TTS lifecycle needs (path resolution, log rotation),
-/// behind a seam so tests can run against a fake tree.
+/// The file operations the TTS lifecycle and the HQ installer need (path resolution, log
+/// rotation, install.json), behind a seam so tests can run against a fake tree.
 @MainActor
 protocol FileSystem {
     func fileExists(atPath path: String) -> Bool
@@ -15,6 +15,21 @@ protocol FileSystem {
     func openForAppending(atPath path: String) throws -> FileHandle
     /// The last `maxBytes` of a file, or nil if it can't be read.
     func readTail(atPath path: String, maxBytes: Int) -> Data?
+    /// The whole file when it is at most `maxBytes` long; nil when it is longer, missing,
+    /// unreadable or not a regular file.
+    func contents(atPath path: String, maxBytes: Int) -> Data?
+    /// `path` with its symlinks resolved, or `path` itself when that fails.
+    func resolvingSymlinks(atPath path: String) -> String
+}
+
+extension FileSystem {
+    /// For trees without links or partial reads (test fakes): the tail, when it is the whole file.
+    func contents(atPath path: String, maxBytes: Int) -> Data? {
+        guard let size = fileSize(atPath: path), size <= UInt64(max(0, maxBytes)) else { return nil }
+        return readTail(atPath: path, maxBytes: maxBytes)
+    }
+
+    func resolvingSymlinks(atPath path: String) -> String { path }
 }
 
 struct LocalFileSystem: FileSystem {
@@ -72,5 +87,25 @@ struct LocalFileSystem: FileSystem {
         let start = end > UInt64(maxBytes) ? end - UInt64(maxBytes) : 0
         try? handle.seek(toOffset: start)
         return try? handle.readToEnd()
+    }
+
+    func contents(atPath path: String, maxBytes: Int) -> Data? {
+        // O_NONBLOCK: opening a FIFO under that name must not hang; only a regular file is read,
+        // and never more than maxBytes + 1 bytes of it (a file that grew past the limit is refused).
+        let fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return nil }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size <= off_t(max(0, maxBytes)) else {
+            return nil
+        }
+        guard let data = try? handle.read(upToCount: maxBytes + 1) ?? Data(), data.count <= maxBytes else { return nil }
+        return data
+    }
+
+    func resolvingSymlinks(atPath path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 }

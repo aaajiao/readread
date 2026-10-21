@@ -34,9 +34,10 @@ final class FoundationProcessLauncherTests: XCTestCase {
         var text: String { String(decoding: stdout, as: UTF8.self) }
     }
 
-    private func launch(_ script: String, stderr: FileHandle = .nullDevice, events: Events) throws -> any ServerProcessHandle {
+    private func launch(_ script: String, shell: String = "/bin/sh", stderr: FileHandle = .nullDevice,
+                        events: Events) throws -> any ServerProcessHandle {
         let handle = try FoundationProcessLauncher().launch(
-            LaunchConfiguration(executable: "/bin/sh", arguments: ["-c", script],
+            LaunchConfiguration(executable: shell, arguments: ["-c", script],
                                 environment: ["PATH": "/usr/bin:/bin"], currentDirectory: nil),
             stderr: stderr,
             onStdout: { data in
@@ -106,6 +107,53 @@ final class FoundationProcessLauncherTests: XCTestCase {
         await waitUntil { events.exit != nil }
         XCTAssertEqual(events.exit, ProcessExit(reason: .signal, code: SIGKILL))
         XCTAssertFalse(handle.isRunning)
+    }
+
+    /// The pid a child prints on its first line.
+    private func firstLinePID(_ events: Events) async throws -> Int32 {
+        await waitUntil { events.text.contains("\n") }
+        return try XCTUnwrap(Int32(events.text.split(separator: "\n").first ?? ""))
+    }
+
+    /// bash runs a trap only once its foreground command has ended (install-hq.sh's venv check,
+    /// import check, extraction): SIGTERM to bash alone waits for that; to its process group it
+    /// ends the command too, so the trap runs at once (HQInstaller's Cancel).
+    func testTerminateGroupReachesWhatABashRunsInTheForeground() async throws {
+        let events = Events()
+        let handle = try launch(#"trap 'echo trapped; exit 7' TERM; /bin/sh -c 'echo "$$"; exec /bin/sleep 30'; echo after"#,
+                                shell: "/bin/bash", events: events)
+        let child = try await firstLinePID(events)
+        XCTAssertEqual(getpgid(handle.pid), handle.pid, "Process starts the child as the leader of a group of its own")
+        XCTAssertEqual(getpgid(child), handle.pid, "what it runs is in that group")
+
+        handle.terminate()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(handle.isRunning, "bash waits for its foreground command before the trap")
+        XCTAssertNil(events.exit)
+
+        handle.terminateGroup()
+        await waitUntil { events.exit != nil }
+        XCTAssertEqual(events.exit, ProcessExit(reason: .exit, code: 7), "the trap ran")
+        XCTAssertTrue(events.text.hasSuffix("trapped\n"), events.text)
+        await waitUntil { kill(child, 0) != 0 }
+    }
+
+    /// SIGKILL to the group leaves nothing of it running: no orphan holding the installer's lock
+    /// (HQInstaller's shutdown).
+    func testKillGroupLeavesNothingOfTheGroupRunning() async throws {
+        let events = Events()
+        let handle = try launch(#"trap '' TERM; /bin/sh -c 'echo "$$"; exec /bin/sleep 30'; echo after"#,
+                                shell: "/bin/bash", events: events)
+        let child = try await firstLinePID(events)
+        handle.terminateGroup()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(handle.isRunning, "SIGTERM is ignored, by its child too")
+
+        handle.killGroup()
+        await waitUntil { events.exit != nil }
+        XCTAssertEqual(events.exit, ProcessExit(reason: .signal, code: SIGKILL))
+        await waitUntil { kill(child, 0) != 0 }
+        XCTAssertFalse(events.text.contains("after"))
     }
 
     func testLaunchingAMissingExecutableThrows() {

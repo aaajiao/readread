@@ -11,6 +11,8 @@ protocol AppShell: AnyObject {
     /// the panel (R4-20).
     func activateApp()
     func quit()
+    /// The Settings window is open: a Settings action's result is shown there, else in the panel.
+    var isSettingsVisible: Bool { get }
 }
 
 /// Finder and the default apps, behind a protocol for the tests.
@@ -27,11 +29,13 @@ final class SystemWorkspace: WorkspaceOpening {
 }
 
 /// The app's state: the input field and the one document load that runs at a time
-/// (InputParser → the document loader), the player (PlaybackController), the error banner, the
-/// preferences (a voice and a speed per language, the reading view's settings, the language
-/// choice per document for this run) and what the Settings window changes. Every user action
-/// from the keyboard, the status item's menu, drops, Services and "Open With" ends up here
-/// (`perform`, `handle`); the windows themselves belong to the `AppShell`.
+/// (InputParser → the document loader), the player (PlaybackController), the engine it reads with
+/// (Kokoro, or Qwen3-TTS from the high-quality install, or the system voice standing in), the error
+/// banner, the preferences (a voice and a speed per language, the engine, the reading view's
+/// settings, the language choice per document for this run) and what the Settings window changes,
+/// the high-quality installer included. Every user action from the keyboard, the status item's
+/// menu, drops, Services and "Open With" ends up here (`perform`, `handle`); the windows themselves
+/// belong to the `AppShell`.
 @Observable
 @MainActor
 final class AppState {
@@ -59,10 +63,34 @@ final class AppState {
 
     /// The Kokoro server (`TTSService` in the app).
     let engine: any SpeechSynthesizer
+    /// The engine documents are read with (`engine` in UserDefaults): Qwen3-TTS only while the
+    /// high-quality install is usable, else Kokoro. The system voice, when in use, stands in for it.
+    private(set) var engineKind: EngineKind
+    /// Runs install-hq.sh and reads install.json (Settings › Advanced › High-quality mode).
+    let installer: any HQInstalling
     /// Reading with the system voice instead of the engine (the engine could not run).
     private(set) var usingSystemVoice = false
     @ObservationIgnored private let makeSystemVoice: @MainActor () -> any SpeechSynthesizer
     @ObservationIgnored private var systemVoice: (any SpeechSynthesizer)?
+    @ObservationIgnored private let makeQwenEngine: QwenEngineFactory?
+    /// The Qwen engine, made on first use for the installation it runs from.
+    private var qwen: QwenEngine?
+    /// An install or uninstall waiting for the Qwen server to stop first.
+    private var pendingInstallerOperation: InstallerOperation?
+    @ObservationIgnored private var installerStart: Task<Void, Never>?
+    /// Qwen was the engine when an install or uninstall set it aside for Kokoro: one that does not
+    /// finish (failed, cancelled) gives it back while Qwen can still be chosen.
+    @ObservationIgnored private var qwenBeforeInstaller = false
+
+    private struct QwenEngine {
+        let installation: HQInstallation
+        let synthesizer: any SpeechSynthesizer
+    }
+
+    /// The engine's synthesizer (Kokoro or Qwen), whatever the system voice does meanwhile.
+    var activeEngine: any SpeechSynthesizer {
+        engineKind == .qwen ? qwen?.synthesizer ?? engine : engine
+    }
 
     var engineStatus: SpeechEngineStatus { player.synthesizer.status }
 
@@ -93,7 +121,7 @@ final class AppState {
     /// The player failure the user dismissed (`PlaybackController.failureCount`).
     private var dismissedFailure = 0
     /// A message without Retry: an empty clipboard, a file type ReadRead cannot read, a preview
-    /// from the panel that failed.
+    /// from the panel that failed, an installer result while Settings is closed.
     private(set) var notice: String?
     /// The result of the last Settings action (R4-21), shown under the section it came from:
     /// the panel's banner may be hidden while Settings is open. Cleared when Settings closes.
@@ -119,12 +147,18 @@ final class AppState {
     @ObservationIgnored private var languageChoices: [String: LanguageChoice] = [:]
 
     /// - Parameters:
+    ///   - qwenEngine: makes the Qwen engine for an installation (the app: `TTSService.qwen`);
+    ///     nil: Qwen3-TTS cannot be used.
+    ///   - installer: the high-quality installer (the app: `HQInstaller`, the install-hq.sh runner); nil:
+    ///     `NoHQInstaller` (nothing installed, nothing to run).
     ///   - loadDocument: input → document, off the main actor (`DocumentLoader.load`).
     ///   - previewOutput: the voice preview's own output (not the document's).
     ///   - clearArticleCache: Settings › Advanced › Clear Cached Articles (the app passes
     ///     `ArticleCache.removeAll`; a no-op by default, for the tests).
     init(
         engine: any SpeechSynthesizer,
+        qwenEngine: QwenEngineFactory? = nil,
+        installer: (any HQInstalling)? = nil,
         output: any AudioOutput,
         defaults: any PreferencesStore = UserDefaults.standard,
         loadDocument: @escaping @Sendable (ReadingInput) async throws -> ReadingDocument = { try await DocumentLoader().load($0) },
@@ -163,12 +197,33 @@ final class AppState {
         self.directories = directories
         self.clearArticleCacheAction = clearArticleCache
         self.defaults = defaults
-        player = PlaybackController(synthesizer: engine, output: output, positions: positions,
+
+        // Qwen3-TTS when it was chosen and its install is usable; a choice whose install went
+        // away falls back to Kokoro once, with a notice (the preference is reset).
+        let installer = installer ?? NoHQInstaller(logDirectory: directories.logDirectory)
+        installer.refresh()
+        var chosenQwen: QwenEngine?
+        var fallbackNotice: String?
+        if preferences.engine == .qwen {
+            if let installation = installer.installState.installation, let qwenEngine {
+                chosenQwen = QwenEngine(installation: installation, synthesizer: qwenEngine(installation))
+            } else {
+                preferences.engine = nil
+                fallbackNotice = Self.fallbackMessage(for: installer.installState)
+            }
+        }
+        self.installer = installer
+        self.makeQwenEngine = qwenEngine
+        self.qwen = chosenQwen
+        self.engineKind = chosenQwen == nil ? .kokoro : .qwen
+
+        player = PlaybackController(synthesizer: chosenQwen?.synthesizer ?? engine, output: output, positions: positions,
                                     nowPlaying: nowPlaying, sleep: sleep)
         previewer = VoicePreviewer(
             output: previewOutput ?? AudioQueuePlayer(),
             cacheDirectory: URL(fileURLWithPath: directories.cacheDirectory).appending(path: "previews"))
         player.restore(settings: settings(for: lastLanguage, choice: .auto))
+        notice = fallbackNotice
         previewer.pauseDocument = { [weak self] in
             guard let player = self?.player, player.state == .playing || player.state == .buffering else { return false }
             player.pause()
@@ -187,15 +242,21 @@ final class AppState {
                 notice = message
             }
         }
+        installer.onFinish = { [weak self] operation, outcome in
+            self?.installerFinished(operation, outcome)
+        }
     }
 
     @ObservationIgnored private let defaults: any PreferencesStore
 
-    /// The app: the Kokoro server, the audio device, UserDefaults (where the loader reads the
-    /// extraction mode too), positions.json, Now Playing, the article cache.
+    /// The app: the Kokoro server, the Qwen engine of the high-quality install (a server of its
+    /// own) and the install-hq.sh runner, the audio device, UserDefaults (where the loader reads
+    /// the extraction mode too), positions.json, Now Playing, the article cache.
     convenience init() {
         self.init(
             engine: TTSService.live(),
+            qwenEngine: { TTSService.qwen(installation: $0) },
+            installer: HQInstaller(),
             output: AudioQueuePlayer(),
             positions: ReadingPositionStore(fileURL: ReadingPositionStore.defaultFileURL()),
             nowPlaying: NowPlayingController(),
@@ -203,13 +264,17 @@ final class AppState {
         )
     }
 
-    /// App termination: save the position, stop the audio and the server.
+    /// App termination: save the position, stop the audio, the servers and the installer.
     func shutdown() {
         cancelLoad()
+        installerStart?.cancel()
+        installerStart = nil
         previewer.stop()
         player.stop()
         engine.shutdown()
+        qwen?.synthesizer.shutdown()
         systemVoice?.shutdown()
+        installer.shutdown()
     }
 
     // MARK: - Loading
@@ -234,6 +299,11 @@ final class AppState {
         logNotice = nil
         notice = nil
         isLoading = true
+        if engineKind == .qwen {
+            // Reading with Qwen needs its install still there (it is read again: no process).
+            installer.refresh()
+            reconcileEngine()
+        }
         // The model loads while the page downloads.
         player.synthesizer.prewarm(for: lastLanguage)
         let loadDocument = self.loadDocument
@@ -346,8 +416,17 @@ final class AppState {
     }
 
     func openSettings() {
-        refreshLoginItemStatus()
+        refreshForSettings()
         shell?.showSettings()
+    }
+
+    /// Settings is about to show: the login item and the high-quality install as they are now. A
+    /// Qwen choice whose install went away is reported under High-quality mode (the window is not
+    /// visible yet, so `report` would send it to the panel).
+    func refreshForSettings() {
+        refreshLoginItemStatus()
+        installer.refresh()
+        reconcileEngine(reportsInSettings: true)
     }
 
     /// A sentence tapped in the reading view: read from there.
@@ -369,7 +448,9 @@ final class AppState {
         player.document?.language(under: player.settings.languageChoice) ?? lastLanguage
     }
 
-    var voicesForSettingsLanguage: [Voice] { Voice.voices(for: settingsLanguage) }
+    /// The engine's voices, in picker order: Kokoro's, or Qwen's one per language.
+    var voiceCatalog: [Voice] { Voice.catalog(for: engineKind) }
+    var voicesForSettingsLanguage: [Voice] { Voice.voices(for: settingsLanguage, in: voiceCatalog) }
     var selectedVoice: Voice { player.settings.voice(for: settingsLanguage) }
     var speed: Double { player.settings.speed }
     var languageChoice: LanguageChoice { player.settings.languageChoice }
@@ -379,13 +460,20 @@ final class AppState {
         player.settings.voice(for: language)
     }
 
+    /// The engine has more than one voice for `language` to choose from (Qwen has one).
+    func hasVoiceChoice(for language: SpeechLanguage) -> Bool {
+        Voice.voices(for: language, in: voiceCatalog).count > 1
+    }
+
     /// The speed for documents in `language`.
     func speed(for language: SpeechLanguage) -> Double {
         language == settingsLanguage ? player.settings.speed : preferences.speed(for: language)
     }
 
+    /// A voice of the engine's catalog; Kokoro's is saved for its language (Qwen's is the only one).
     func selectVoice(_ voice: Voice) {
-        preferences.saveVoice(voice)
+        guard voiceCatalog.contains(voice) else { return }
+        if engineKind == .kokoro { preferences.saveVoice(voice) }
         player.userSetVoice(voice)
     }
 
@@ -450,11 +538,15 @@ final class AppState {
     var panelSize: CGSize { readingPreferences.panelSize }
 
     private func settings(for language: SpeechLanguage, choice: LanguageChoice) -> PlaybackSettings {
-        PlaybackSettings(
-            voices: Dictionary(uniqueKeysWithValues: SpeechLanguage.allCases.map { ($0, preferences.voice(for: $0)) }),
-            speed: preferences.speed(for: language),
-            languageChoice: choice
-        )
+        PlaybackSettings(voices: engineVoices(), speed: preferences.speed(for: language), languageChoice: choice)
+    }
+
+    /// The voices the engine reads with: Qwen's one per language, else the Kokoro voices chosen.
+    private func engineVoices() -> [SpeechLanguage: Voice] {
+        Dictionary(uniqueKeysWithValues: SpeechLanguage.allCases.map { language in
+            let voice = engineKind == .qwen ? Voice.voices(for: language, in: Voice.qwen).first : nil
+            return (language, voice ?? preferences.voice(for: language))
+        })
     }
 
     private func remember(_ language: SpeechLanguage) {
@@ -488,7 +580,7 @@ final class AppState {
 
     /// The engine's state, for Settings › Advanced.
     var engineStatusText: String {
-        switch engine.status {
+        switch activeEngine.status {
         case .idle: String(localized: "Not running (starts when needed)")
         case .starting: String(localized: "Starting…")
         case .ready: String(localized: "Running")
@@ -496,14 +588,14 @@ final class AppState {
         }
     }
 
-    /// Restart the Kokoro server; a failed reading goes on once it is back.
+    /// Restart the engine (Kokoro or Qwen); a failed reading goes on once it is back.
     func restartEngine() {
         if !usingSystemVoice, player.state.isFailed {
             logNotice = nil
             player.retry()
             return
         }
-        let engine = self.engine
+        let engine = activeEngine
         clearSettingsNotice(.engine)
         Task { [weak self] in
             do {
@@ -557,6 +649,275 @@ final class AppState {
     /// The lexicon format with no entries (see `readread_tts/lexicon.py`).
     static let emptyLexicon = "{\"version\": 1, \"entries\": []}\n"
 
+    // MARK: - The engine (Settings › Advanced)
+
+    /// Qwen3-TTS can be chosen: it is installed, and no install or uninstall is running.
+    var canChooseQwen: Bool {
+        guard canRunQwen, installer.installState.installation != nil else { return false }
+        if pendingInstallerOperation != nil { return false }
+        if case .running(let operation, _) = installer.state, operation != .check { return false }
+        return true
+    }
+
+    /// This build can run Qwen3-TTS (the app's engine factory is wired in).
+    var canRunQwen: Bool { makeQwenEngine != nil }
+
+    /// An installer operation runs, or waits for the Qwen server to stop first.
+    var installerIsBusy: Bool { pendingInstallerOperation != nil || installer.state.isRunning }
+
+    /// Settings › Advanced › Engine (a user edit): the player switches (the sentence being read
+    /// starts again with the new engine, a pause stays), the engine left behind stops (Qwen frees
+    /// 3–4 GB) and the new one loads when a document is open. Qwen only while `canChooseQwen`.
+    /// Choosing an engine also ends the system voice, and is a fresh attempt: a failure that kept
+    /// the chosen engine from starting is forgotten, and a reading that failed (its banner still
+    /// up) goes on from the failed sentence with it.
+    func setEngine(_ kind: EngineKind) {
+        if kind == .qwen, !canChooseQwen { return }
+        preferences.engine = kind
+        guard kind != engineKind || usingSystemVoice else { return }
+        let resumes = loadError == nil && player.state.isFailed && player.failureCount != dismissedFailure
+        switchEngine(to: kind, freshAttempt: true)
+        if resumes, player.state.isFailed { player.play() }
+    }
+
+    /// The banner's Use Kokoro after a Qwen failure: Kokoro reads on from the failed sentence (the
+    /// choice is saved; Settings can choose Qwen again).
+    func useKokoro() {
+        let resume = player.state.isFailed
+        dismissError()
+        setEngine(.kokoro)
+        if resume, player.state.isFailed { player.play() }
+    }
+
+    /// The player reads with `kind` from now on; the engine left behind stops (`stopsPrevious`).
+    /// A player failure on screen was the engine left behind's (its offers, its log), so it is
+    /// dismissed; `freshAttempt` (a user's choice) also forgets the new engine's failure.
+    private func switchEngine(to kind: EngineKind, stopsPrevious: Bool = true, freshAttempt: Bool = false) {
+        let previous = activeEngine
+        if kind == .qwen {
+            guard let installation = installer.installState.installation,
+                  qwenSynthesizer(for: installation) != nil else { return }
+        }
+        engineKind = kind
+        usingSystemVoice = false
+        previewer.stop()
+        if player.state.isFailed {
+            dismissedFailure = player.failureCount
+            logNotice = nil
+        }
+        let current = activeEngine
+        if freshAttempt { current.resetFailure() }
+        player.setSynthesizer(current, voices: engineVoices())
+        if stopsPrevious, previous !== current {
+            Task { await previous.stop() }
+        }
+        if hasDocument { current.prewarm(for: settingsLanguage) }
+    }
+
+    /// The Qwen engine for `installation`: made on first use, and again when the installation
+    /// changed (the caller stops the old one if it was reading).
+    private func qwenSynthesizer(for installation: HQInstallation) -> (any SpeechSynthesizer)? {
+        if let qwen, qwen.installation == installation { return qwen.synthesizer }
+        guard let makeQwenEngine else { return nil }
+        let synthesizer = makeQwenEngine(installation)
+        qwen = QwenEngine(installation: installation, synthesizer: synthesizer)
+        return synthesizer
+    }
+
+    /// The engine against install.json (after an installer run, when Settings opens, before a
+    /// load): Qwen with nothing usable installed falls back to Kokoro (the preference is reset,
+    /// with a notice: under High-quality mode when `reportsInSettings`); a changed installation
+    /// gets a new Qwen engine.
+    private func reconcileEngine(reportsInSettings: Bool = false) {
+        guard engineKind == .qwen else { return }
+        if let installation = installer.installState.installation, makeQwenEngine != nil {
+            if qwen?.installation != installation { switchEngine(to: .qwen) }
+            return
+        }
+        preferences.engine = nil
+        switchEngine(to: .kokoro)
+        let message = Self.fallbackMessage(for: installer.installState)
+        if reportsInSettings {
+            settingsNotice = SettingsNotice(section: .highQuality, message: message, isError: true)
+        } else {
+            report(message, isError: true)
+        }
+    }
+
+    /// Why a Qwen choice reads with Kokoro instead.
+    private static func fallbackMessage(for state: HQInstallState) -> String {
+        switch state {
+        case .notInstalled:
+            String(localized: "High-quality mode is no longer installed, so ReadRead reads with Kokoro.")
+        case .damaged(let message) where state.hasNoHome:
+            // Nothing to repair: the message says what to change.
+            String(localized: "High-quality mode cannot be used (\(message)), so ReadRead reads with Kokoro.")
+        case .damaged(let message):
+            String(localized: "High-quality mode cannot be used (\(message)), so ReadRead reads with Kokoro. Repair it in Settings › Advanced › High-quality mode.")
+        case .installed:
+            String(localized: "This build of ReadRead cannot run high-quality mode, so it reads with Kokoro.")
+        }
+    }
+
+    // MARK: - High-quality mode (Settings › Advanced)
+
+    /// What Settings › Advanced › High-quality mode shows: the operation running or how the last
+    /// one failed, else what is installed.
+    var highQualityStatus: HighQualityStatus {
+        if let pendingInstallerOperation { return .running(pendingInstallerOperation, InstallerProgress()) }
+        switch installer.state {
+        case .running(let operation, let progress): return .running(operation, progress)
+        case .failed(let operation, let message): return .failed(operation, message: message)
+        case .cancelled(let operation): return .cancelled(operation)
+        case .idle, .finished: break
+        }
+        switch installer.installState {
+        case .notInstalled: return .notInstalled
+        case .installed(let installation): return .installed(installation)
+        case .damaged(let message): return .damaged(message)
+        }
+    }
+
+    /// What Uninstall… would remove: an install (installed or damaged), the files an install that
+    /// never finished left (Remove Downloaded Files…), or nothing (no files, or no HQ home).
+    var highQualityRemoval: HighQualityRemoval {
+        switch installer.installState {
+        case .installed: .install
+        case .damaged: installer.installState.hasNoHome ? .nothing : .install
+        case .notInstalled: installer.hasLeftoverFiles ? .leftovers : .nothing
+        }
+    }
+
+    /// Install (also Repair and Try Again), Verify or Uninstall. An install may rebuild the venv
+    /// the Qwen server runs from and an uninstall removes it, so for both the player leaves Qwen
+    /// for Kokoro and the Qwen server stops first.
+    func runInstaller(_ operation: InstallerOperation) {
+        guard !installer.state.isRunning, pendingInstallerOperation == nil else { return }
+        clearSettingsNotice(.highQuality)
+        guard operation != .check else {
+            installer.start(operation)
+            return
+        }
+        let qwenEngine = qwen?.synthesizer
+        qwenBeforeInstaller = engineKind == .qwen
+        if engineKind == .qwen {
+            preferences.engine = .kokoro
+            switchEngine(to: .kokoro, stopsPrevious: false)
+        }
+        pendingInstallerOperation = operation
+        installerStart = Task { [weak self] in
+            await qwenEngine?.stop()
+            guard !Task.isCancelled, let self else { return }
+            self.installerStart = nil
+            self.pendingInstallerOperation = nil
+            self.installer.start(operation)
+        }
+    }
+
+    /// Cancel: install-hq.sh stops at once; installing again resumes.
+    func cancelInstaller() {
+        if let installerStart, let operation = pendingInstallerOperation {
+            installerStart.cancel()
+            self.installerStart = nil
+            pendingInstallerOperation = nil
+            report(Self.cancelledMessage(operation), isError: false)
+            restoreQwenChoice()
+            return
+        }
+        installer.cancel()
+    }
+
+    /// The installer's log (the stderr of every run) in the default app; "no log yet" under the
+    /// section the button is in.
+    func showInstallerLog(inSettings section: SettingsNotice.Section = .highQuality) {
+        let url = installer.logFileURL
+        if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+            clearSettingsNotice(section)
+            workspace.open(url)
+        } else {
+            settingsNotice = SettingsNotice(
+                section: section, message: String(localized: "No log yet at \(url.path(percentEncoded: false))"),
+                isError: false)
+        }
+    }
+
+    /// An operation ended (install.json was read again): a new install is chosen, results are
+    /// reported, an install that went away leaves Qwen.
+    private func installerFinished(_ operation: InstallerOperation, _ outcome: InstallerState) {
+        installer.refresh()
+        switch outcome {
+        case .finished:
+            switch operation {
+            case .install:
+                if canChooseQwen {
+                    setEngine(.qwen)
+                    report(String(localized: "High-quality mode is installed. ReadRead now reads with Qwen3-TTS."), isError: false)
+                } else {
+                    report(String(localized: "The installer finished, but high-quality mode cannot be used: \(Self.unusableReason(installer.installState))"),
+                           isError: true)
+                }
+            case .check:
+                report(String(localized: "High-quality mode is intact: every file was verified."), isError: false)
+            case .uninstall:
+                qwen = nil
+                report(String(localized: "High-quality mode was uninstalled."), isError: false)
+            }
+        case .failed(_, let message):
+            // Settings shows the failure in the section itself (with Try Again).
+            report(Self.failureMessage(operation, message), isError: true, inSettings: false)
+            restoreQwenChoice()
+        case .cancelled:
+            report(Self.cancelledMessage(operation), isError: false, inSettings: false)
+            restoreQwenChoice()
+        case .idle, .running:
+            break
+        }
+        qwenBeforeInstaller = false
+        reconcileEngine()
+    }
+
+    /// An install or uninstall that did not finish: the Qwen choice it set aside comes back while
+    /// Qwen can still be chosen (an install it stopped on the way reads as damaged: not then).
+    private func restoreQwenChoice() {
+        guard qwenBeforeInstaller else { return }
+        qwenBeforeInstaller = false
+        if canChooseQwen { setEngine(.qwen) }
+    }
+
+    /// An installer result under Settings › Advanced › High-quality mode while Settings is open
+    /// (`inSettings` false: the section's own state says it there), else as the panel's notice.
+    private func report(_ message: String, isError: Bool, inSettings: Bool = true) {
+        if shell?.isSettingsVisible == true {
+            if inSettings { settingsNotice = SettingsNotice(section: .highQuality, message: message, isError: isError) }
+        } else {
+            notice = message
+        }
+    }
+
+    static func failureMessage(_ operation: InstallerOperation, _ message: String) -> String {
+        switch operation {
+        case .install: String(localized: "Installing high-quality mode failed: \(message)")
+        case .check: String(localized: "Verifying high-quality mode failed: \(message)")
+        case .uninstall: String(localized: "Uninstalling high-quality mode failed: \(message)")
+        }
+    }
+
+    static func cancelledMessage(_ operation: InstallerOperation) -> String {
+        switch operation {
+        case .install: String(localized: "Cancelled. Installing again resumes where it stopped.")
+        case .check: String(localized: "Verifying was cancelled.")
+        case .uninstall: String(localized: "Uninstalling was cancelled.")
+        }
+    }
+
+    private static func unusableReason(_ state: HQInstallState) -> String {
+        switch state {
+        case .damaged(let message): message
+        case .notInstalled: String(localized: "install.json was not written")
+        case .installed: String(localized: "this build cannot run it")
+        }
+    }
+
     // MARK: - System voice
 
     /// The engine cannot run: read with the system voice, from the failed sentence on.
@@ -577,7 +938,7 @@ final class AppState {
         guard usingSystemVoice else { return }
         usingSystemVoice = false
         previewer.stop()
-        player.setSynthesizer(engine)
+        player.setSynthesizer(activeEngine, voices: engineVoices())
     }
 
     // MARK: - Errors
@@ -599,11 +960,20 @@ final class AppState {
     /// What the banner shows: the error, else the notice.
     var bannerMessage: String? { errorMessage ?? notice }
 
-    /// The engine's files are missing: the setup hint applies.
-    var errorNeedsSetup: Bool { (bannerError as? TTSError)?.isResourcesMissing ?? false }
+    /// Kokoro's files are missing: the setup hint applies (never to Qwen, whose install is set up
+    /// in Settings).
+    var errorNeedsSetup: Bool { engineKind == .kokoro && ((bannerError as? TTSError)?.isResourcesMissing ?? false) }
 
-    /// The engine cannot run: offer the system voice.
-    var offersSystemVoice: Bool { !usingSystemVoice && ((bannerError as? TTSError)?.isServerFailure ?? false) }
+    /// Kokoro cannot run: offer the system voice.
+    var offersSystemVoice: Bool {
+        engineKind == .kokoro && !usingSystemVoice && ((bannerError as? TTSError)?.isServerFailure ?? false)
+    }
+
+    /// Qwen failed: offer Kokoro, from the failed sentence on.
+    var offersKokoro: Bool {
+        engineKind == .qwen && !usingSystemVoice && loadError == nil && player.state.isFailed
+            && player.failureCount != dismissedFailure
+    }
 
     private var bannerError: (any Error)? {
         if let loadError { return loadError }
@@ -643,10 +1013,13 @@ final class AppState {
         pasteboard.write(message)
     }
 
+    /// The engine's log (Kokoro's or Qwen's, whichever reads).
+    var engineLogURL: URL? { activeEngine.logFileURL }
+
     /// Show Log, in the banner or (`inSettings`) in Settings › Advanced, where "no log yet" is
-    /// then shown.
+    /// then shown: the log of the engine reading (Qwen's or Kokoro's).
     func showLog(inSettings: Bool = false) {
-        guard let url = engine.logFileURL else { return }
+        guard let url = engineLogURL else { return }
         if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
             if inSettings { clearSettingsNotice(.files) }
             workspace.open(url)
@@ -685,6 +1058,8 @@ struct SettingsNotice: Equatable, Sendable {
         case preview
         /// Advanced › Voice engine: Restart Engine.
         case engine
+        /// Advanced › High-quality mode: Install, Verify, Uninstall.
+        case highQuality
         /// Advanced › Files: Show Log, Show in Finder.
         case files
         /// Advanced › Article cache.
@@ -694,6 +1069,52 @@ struct SettingsNotice: Equatable, Sendable {
     let section: Section
     let message: String
     let isError: Bool
+}
+
+/// Settings › Advanced › High-quality mode: an operation running or how the last one ended
+/// (failed, cancelled), else the install as install.json says.
+enum HighQualityStatus: Equatable, Sendable {
+    case notInstalled
+    case running(InstallerOperation, InstallerProgress)
+    case installed(HQInstallation)
+    case damaged(String)
+    case failed(InstallerOperation, message: String)
+    case cancelled(InstallerOperation)
+}
+
+/// What Settings › Advanced › High-quality mode can remove (`AppState.highQualityRemoval`).
+enum HighQualityRemoval: Equatable, Sendable {
+    case nothing
+    /// An install, intact or damaged: Uninstall….
+    case install
+    /// What an install that never finished left: Remove Downloaded Files….
+    case leftovers
+}
+
+/// High-quality mode where no installer is wired in (the tests' default; the app passes
+/// `HQInstaller`): nothing is installed, and an operation fails at once, saying so.
+@Observable
+@MainActor
+final class NoHQInstaller: HQInstalling {
+    private(set) var state: InstallerState = .idle
+    let installState: HQInstallState = .notInstalled
+    let hasLeftoverFiles = false
+    let logFileURL: URL
+    @ObservationIgnored var onFinish: (@MainActor (InstallerOperation, InstallerState) -> Void)?
+
+    init(logDirectory: String) {
+        logFileURL = URL(fileURLWithPath: logDirectory).appending(path: "hq-install.log")
+    }
+
+    func refresh() {}
+
+    func start(_ operation: InstallerOperation) {
+        state = .failed(operation, message: String(localized: "This build of ReadRead has no installer for high-quality mode."))
+        onFinish?(operation, state)
+    }
+
+    func cancel() {}
+    func shutdown() {}
 }
 
 extension PlaybackController.State {
