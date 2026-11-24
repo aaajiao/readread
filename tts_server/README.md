@@ -91,7 +91,7 @@ emoji and arrows are dropped before splitting.
 
 ## Qwen3-TTS engine (`--engine qwen`)
 
-Qwen3-TTS-12Hz-1.7B-CustomVoice, 8-bit, on the GPU through MLX (mlx 0.32.4, mlx-audio 0.6.0). It is optional and not
+Qwen3-TTS-12Hz-1.7B-CustomVoice, 8-bit, on the GPU through MLX (mlx 0.32.4, mlx-audio 0.6.8). It is optional and not
 in the app bundle: `scripts/install-hq.sh` puts a CPython, a venv and the model files into `$READREAD_HQ_HOME`
 (default `~/Library/Application Support/ReadRead/hq`), and the server runs from that venv:
 

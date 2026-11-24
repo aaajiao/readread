@@ -6,10 +6,12 @@
 # constrained by requirements.lock, so a package both engines use has the same pin in both.
 # Only what the qwen route imports: no onnxruntime, kokoro-onnx, spaCy or espeak.
 
-# MLX and the Qwen3-TTS model code: the versions the lab validated (mlx-audio 0.6.1 is not).
+# MLX and the Qwen3-TTS model code. The lab validated mlx-audio 0.6.0; 0.6.8 keeps the API the engine
+# uses and bounds the speech decoder's attention to its 72-frame (5.76 s) sliding window (#1117; 0.6.0's
+# streaming decoder attended to the whole sentence, past what it was trained on).
 mlx==0.32.4
 mlx-metal==0.32.4
-mlx-audio==0.6.0
+mlx-audio==0.6.8
 # mlx-audio asks for transformers>=5.14 (the Qwen tokenizer); 5.20.2 is the lab-validated one.
 transformers==5.20.2
 

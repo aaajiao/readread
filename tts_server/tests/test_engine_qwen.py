@@ -418,7 +418,7 @@ def test_install_hq_installs_the_server_dependencies():
                          ("num2words", "num2words"), ("pypinyin", "pypinyin"), ("numpy", "numpy")]:
         assert dist in pinned, module
     assert not pinned & {"onnxruntime", "kokoro-onnx", "spacy", "en-core-web-sm", "phonemizer-fork", "espeakng-loader"}
-    assert re.search(r"^mlx==0\.32\.4 ", lock, re.M) and re.search(r"^mlx-audio==0\.6\.0 ", lock, re.M)
+    assert re.search(r"^mlx==0\.32\.4 ", lock, re.M) and re.search(r"^mlx-audio==0\.6\.8 ", lock, re.M)
 
 
 def test_audio_trim_head():

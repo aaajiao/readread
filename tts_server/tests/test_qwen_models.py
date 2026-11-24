@@ -143,7 +143,7 @@ def test_health(hq):
     assert {k: data[k] for k in ("status", "api", "loaded", "engine", "model")} == {
         "status": "ok", "api": 2, "loaded": ["zh", "en"], "engine": "qwen", "model": hq.model}
     assert {k: data["versions"][k] for k in ("mlx", "mlx_audio", "transformers", "misaki")} == {
-        "mlx": "0.32.4", "mlx_audio": "0.6.0", "transformers": "5.20.2", "misaki": "0.9.4"}
+        "mlx": "0.32.4", "mlx_audio": "0.6.8", "transformers": "5.20.2", "misaki": "0.9.4"}
     assert data["versions"]["python"] == "3.12.15"
 
 

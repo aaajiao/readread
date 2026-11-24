@@ -1,4 +1,4 @@
-"""The Qwen3-TTS engine (--engine qwen): Qwen3-TTS-12Hz CustomVoice 8-bit on the GPU through MLX (mlx-audio 0.6.0).
+"""The Qwen3-TTS engine (--engine qwen): Qwen3-TTS-12Hz CustomVoice 8-bit on the GPU through MLX (mlx-audio 0.6.8).
 
 It is optional and lives outside the app: scripts/install-hq.sh builds its venv (requirements-hq.lock) and puts the
 model folder in $READREAD_HQ_HOME/models. One model, 1.7b (--model's only value, and its default). Two voices,
