@@ -50,6 +50,9 @@ struct HQInstallation: Equatable, Sendable {
     let installedAt: Date?
     /// The bytes of the model's files (`models["1.7b"].bytes`), for Settings.
     let modelBytes: Int64
+    /// `lock_sha256`: the sha256 of the requirements-hq.lock venv/ was built from (lowercase hex),
+    /// nil when install.json has none. `needsPackageUpdate(shippedLockSHA256:)` compares it.
+    var lockSHA256: String? = nil
 
     var venvPython: String { (home as NSString).appendingPathComponent("venv/bin/python3") }
     var modelsDirectory: String { (home as NSString).appendingPathComponent("models") }
@@ -131,6 +134,11 @@ protocol HQInstalling: AnyObject {
     /// Nothing is installed (`.notInstalled`), but an install that never finished left Python, the
     /// packages or model files in the HQ home; uninstalling removes them. Re-read with `installState`.
     var hasLeftoverFiles: Bool { get }
+    /// The install is usable (`.installed`), but install.json records another requirements-hq.lock
+    /// than the one beside the installer this app runs: its venv has other package versions than
+    /// this ReadRead ships (an app update bumped them). Qwen still runs; installing again (Update)
+    /// rebuilds venv/ and keeps the model. Re-read with `installState`.
+    var hasPackageUpdate: Bool { get }
     /// Re-read install.json (cheap: no process).
     func refresh()
     /// Start an operation; ignored while one runs. The caller stops a running Qwen server first

@@ -12,9 +12,9 @@ final class HQInstallationTests: XCTestCase {
 
     /// What install-hq.sh writes, with `models` replaced when given.
     private func manifestJSON(version: String = "1", models: String? = nil,
-                              installedAt: String = "\"2026-10-20T09:30:00Z\"") -> String {
+                              installedAt: String = "\"2026-10-20T09:30:00Z\"", lock: String = "\"00\"") -> String {
         let entry = #"{"repo":"mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit","revision":"abc","dir":"Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit","files":["model.safetensors"],"bytes":2400000000}"#
-        return #"{"version":\#(version),"python":"3.12.12","lock_sha256":"00","models":\#(models ?? #"{"1.7b":\#(entry)}"#),"installed_at":\#(installedAt)}"#
+        return #"{"version":\#(version),"python":"3.12.12","lock_sha256":\#(lock),"models":\#(models ?? #"{"1.7b":\#(entry)}"#),"installed_at":\#(installedAt)}"#
     }
 
     /// A fake tree with install.json holding `json`, the model folder, the venv python and the
@@ -87,6 +87,7 @@ final class HQInstallationTests: XCTestCase {
         XCTAssertEqual(installation.installedAt, Date(timeIntervalSince1970: 1_792_488_600))
         XCTAssertEqual(installation.venvPython, "/hq/venv/bin/python3")
         XCTAssertEqual(installation.modelsDirectory, "/hq/models")
+        XCTAssertEqual(installation.lockSHA256, "00")
     }
 
     func testNoManifestIsNotInstalled() {
@@ -206,6 +207,53 @@ final class HQInstallationTests: XCTestCase {
                        "/hq/install.json is larger than 1 MB.")
     }
 
+    // MARK: - The packages this app ships (lock_sha256)
+
+    /// sha256("abc"), lowercase hex.
+    private let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+    func testTheRecordedLockIsReadLowercased() throws {
+        func lock(_ value: String) throws -> String? {
+            try XCTUnwrap(HQInstallation.read(home: home, fileSystem: fakeInstall(manifestJSON(lock: value))).installation,
+                          value).lockSHA256
+        }
+        XCTAssertEqual(try lock(#""\#(abc.uppercased())""#), abc)
+        XCTAssertNil(try lock("null"), "none recorded: still installed")
+        XCTAssertNil(try lock("7"), "not a string")
+        let without = #"{"version":1,"models":{"1.7b":{"bytes":5}}}"#
+        XCTAssertNil(try XCTUnwrap(HQInstallation.read(home: home, fileSystem: fakeInstall(without)).installation).lockSHA256)
+    }
+
+    func testTheShippedLockIsBesideTheScript() {
+        XCTAssertEqual(
+            HQInstallation.lockFile(forScript: "/Applications/ReadRead.app/Contents/Resources/installer/scripts/install-hq.sh"),
+            "/Applications/ReadRead.app/Contents/Resources/installer/tts_server/requirements-hq.lock")
+        XCTAssertEqual(HQInstallation.lockFile(forScript: "/checkout/scripts/install-hq.sh"),
+                       "/checkout/tts_server/requirements-hq.lock")
+    }
+
+    func testTheLocksSHA256() {
+        let fs = FakeFileSystem()
+        let path = "/checkout/tts_server/requirements-hq.lock"
+        XCTAssertNil(HQInstallation.lockSHA256(atPath: path, fileSystem: fs), "missing")
+        fs.addFile(path, size: 3)
+        fs.tails[path] = Data("abc".utf8)
+        XCTAssertEqual(HQInstallation.lockSHA256(atPath: path, fileSystem: fs), abc)
+        fs.files[path] = UInt64(HQInstallation.maxLockBytes) + 1
+        XCTAssertNil(HQInstallation.lockSHA256(atPath: path, fileSystem: fs), "over 1 MB: not read")
+    }
+
+    func testAnotherLockNeedsAnUpdate() {
+        let installed = makeInstallation(lockSHA256: abc)
+        XCTAssertFalse(installed.needsPackageUpdate(shippedLockSHA256: abc))
+        XCTAssertFalse(installed.needsPackageUpdate(shippedLockSHA256: abc.uppercased()))
+        XCTAssertTrue(installed.needsPackageUpdate(shippedLockSHA256: String(repeating: "0", count: 64)))
+        XCTAssertTrue(makeInstallation(lockSHA256: nil).needsPackageUpdate(shippedLockSHA256: abc),
+                      "none recorded: install-hq.sh --check fails it too")
+        XCTAssertFalse(installed.needsPackageUpdate(shippedLockSHA256: nil), "no lock beside the app: nothing to compare")
+        XCTAssertFalse(makeInstallation(lockSHA256: nil).needsPackageUpdate(shippedLockSHA256: nil))
+    }
+
     // MARK: - On disk
 
     /// A real tree in a temporary directory, read through `LocalFileSystem`.
@@ -262,6 +310,16 @@ final class HQInstallationTests: XCTestCase {
         XCTAssertEqual(mkfifo(root + "/install.json", 0o600), 0)
         XCTAssertEqual(HQInstallation.read(home: root, fileSystem: LocalFileSystem()),
                        .damaged("\(root)/install.json cannot be read."))
+    }
+
+    /// The lock is hashed as install-hq.sh's `rr_sha256` (`shasum -a 256`) hashes it: every byte.
+    func testARealLockIsHashedWhole() throws {
+        let path = try makeTemporaryDirectory().appending(path: "requirements-hq.lock").path
+        try Data("abc".utf8).write(to: URL(fileURLWithPath: path))
+        XCTAssertEqual(HQInstallation.lockSHA256(atPath: path, fileSystem: LocalFileSystem()), abc)
+        let big = Data(repeating: 0x61, count: HQInstallation.maxLockBytes + 1)
+        try big.write(to: URL(fileURLWithPath: path))
+        XCTAssertNil(HQInstallation.lockSHA256(atPath: path, fileSystem: LocalFileSystem()))
     }
 
     func testNoHomeDirectoryAtAllIsNotInstalled() throws {

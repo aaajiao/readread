@@ -32,7 +32,7 @@ READREAD_TEST_DEFUDDLE=~/.readread/defuddle/defuddle.full.js READREAD_TEST_WEBKI
 READREAD_RENDER_UI=1 READREAD_RENDER_DIR=<dir> swift test --filter UIRenderTests   # the panel and Settings as PNGs,
                                     # and the reading view's main-thread time on a 1 MB Markdown novel
 # The README's screenshots (docs/screenshots/readme-*.png), the bottom bar showing that version
-READREAD_RENDER_UI=1 READREAD_RENDER_DIR=docs/screenshots READREAD_RENDER_VERSION=0.5.0 \
+READREAD_RENDER_UI=1 READREAD_RENDER_DIR=docs/screenshots READREAD_RENDER_VERSION=0.5.1 \
   swift test --filter UIRenderTests/testTheReadmeScreenshots
 ~/.readread/env/bin/python3 -B -m pytest -q -p no:cacheprovider tts_server/tests      # fast tests
 READREAD_MODELS_DIR=~/.readread/models ~/.readread/env/bin/python3 -B -m pytest -q -p no:cacheprovider tts_server/tests
@@ -138,10 +138,14 @@ App and UI:
   failed sentence with it. Any engine switch dismisses a player failure on screen (the left engine's: its offers,
   setup hint and log are not the new one's). `runInstaller` / `cancelInstaller` / `installerFinished` drive
   `HQInstalling` (install and uninstall leave Qwen for Kokoro and stop its server first; a finished install selects
-  Qwen; one that fails or is cancelled gives a Qwen choice back while Qwen can still be chosen; results under
-  Settings' High-quality mode, or as the panel's notice while Settings is closed; a fallback found as Settings opens,
-  `refreshForSettings`, always under High-quality mode), `highQualityStatus` and `highQualityRemoval` (Uninstall…,
-  Remove Downloaded Files… or nothing) for that section. `NoHQInstaller` (tests).
+  Qwen, except an Update, which gives back the engine chosen before it (so does its Try Again after a failure or a
+  cancel: `interruptedUpdate`, in memory only, cleared by any finished run or any other run); one that fails or is
+  cancelled gives a Qwen choice back while Qwen can still be chosen; results under Settings' High-quality mode, or
+  as the panel's notice while Settings is closed; a fallback found as Settings opens, `refreshForSettings`, always
+  under High-quality mode), `highQualityStatus` (`.updateAvailable` while `installer.hasPackageUpdate`) and
+  `highQualityRemoval` (Uninstall…, Remove Downloaded Files… or nothing) for that section. The first document of a
+  run that opens with Qwen while its packages need an update says so once in the panel's notice
+  (`announcePackageUpdate`, after the document opened, never for a load that failed). `NoHQInstaller` (tests).
 - `ReadReadApp.swift` — `AppDelegate`, the `AppShell` (panel, Settings, `isSettingsVisible`, activation, quit): the
   status item, the `FloatingPanel`, the Settings window, and the ways in from other apps: Services
   (`@objc(readAloud:userData:error:)`, the Info.plist's `NSMessage`), Open With (`application(_:open:)`, also files
@@ -183,7 +187,9 @@ App and UI:
   disabled as a whole while only Kokoro can be chosen, with a hint why; the active engine's status and Restart
   Engine; `HighQualityModeSection`: what it is, then per `HighQualityStatus` Install (an inline confirmation: size,
   sources, disk space), `InstallerProgressView` (step bar, the file's bytes) with Cancel, the installed model's size
-  and date with Verify and Uninstall… (confirmed inline), Repair, Try Again and Show Installer Log, Uninstall… or
+  and date with Verify and Uninstall… (confirmed inline), or with an update available (`.updateAvailable`: the
+  install's packages are not the ones this app ships; Qwen still runs) a note and Uninstall… and Update (the same
+  install-hq.sh run as Repair, which keeps the model), Repair, Try Again and Show Installer Log, Uninstall… or
   Remove Downloaded Files… also after a failure or a cancel (and the latter beside Install for what an unfinished
   first install left), nothing to repair or remove without an HQ home; `HQFormat`; the
   engine and installer logs, the pronunciation file, Clear Cached Articles). What a Settings action did, or why it
@@ -202,8 +208,12 @@ App and UI:
   file = notInstalled, unless install.json.prev is there (an install or repair that did not finish: damaged); over
   1 MB, not JSON, version ≠ 1, no "1.7b" entry, no `models/<QwenModel.folder>/`, no executable `venv/bin/python3` or
   no `completionStamps` (`python/.readread-python`, `venv/.readread-hq-venv`, written once each is complete) =
-  damaged (the message says which; other model keys are ignored). `hasLeftovers`: python/, python.partial/, venv/ or
-  the model folder of an install that never finished. Reads at most 1 MB, never runs a process.
+  damaged (the message says which; other model keys are ignored). `HQInstallation.lockSHA256` is install.json's
+  `lock_sha256` (lowercased; nil without one); `lockFile(forScript:)` is the requirements-hq.lock an install-hq.sh
+  installs (`<script>/../../tts_server/`), `lockSHA256(atPath:fileSystem:)` its sha256 (at most 1 MB read), and
+  `needsPackageUpdate(shippedLockSHA256:)` is true when they differ or none is recorded (an update, not damage: the
+  old venv still runs), never without a lock to compare with. `hasLeftovers`: python/, python.partial/, venv/ or
+  the model folder of an install that never finished. Reads at most 1 MB per file, never runs a process.
 - `HQInstaller.swift` — `HQInstaller` (`@Observable`, the live `HQInstalling`): `InstallerEvent.parse` (junk → nil);
   the script (an explicit path, else the bundle's `Contents/Resources/installer/scripts/install-hq.sh`, the checkout's
   next to `$READREAD_HOME/tts_server`'s symlink target, `<cwd>/scripts/install-hq.sh`) run as `/bin/bash <script>
@@ -212,7 +222,9 @@ App and UI:
   `READREAD_TTS_SERVER_DIR` = the app's server code); stdout events → `state` (step, download bytes); stderr →
   `hq-install.log` with a header and an end line per run. Exit 0 after a done event = finished, an error event =
   failed with its message, `cancel()` (SIGTERM) = cancelled, anything else = failed naming the status and the log;
-  then `refresh()` (also `hasLeftoverFiles`), then `onFinish`. Cancel and `shutdown()` (SIGTERM, SIGKILL after 2 s)
+  then `refresh()` (also `hasLeftoverFiles`, and `hasPackageUpdate`: an installed install.json's `lock_sha256`
+  against `shippedLockSHA256()`, the lock beside the script `resolveScript` finds), then `onFinish`. Cancel and
+  `shutdown()` (SIGTERM, SIGKILL after 2 s)
   signal the script's process group (`terminateGroup` / `killGroup`: bash defers its trap while a foreground command
   runs, and nothing is left behind); `installer-tmp` is emptied before a run and removed after it.
 - `VoicePicker.swift` — `VoicePickerButton` (opens the grouped `VoiceListView`, ▶ on every row; the voice's name
@@ -551,8 +563,8 @@ Show Log and Retry (the setup hint only when Kokoro's files are missing, "Use Sy
 cannot run, "Use Kokoro" when Qwen failed), and the bottom bar: "Starting voice engine…" or "Starting the
 high-quality engine…", "High-quality mode" while Qwen is the engine (or the system-voice status with "Use Kokoro"),
 the version, Settings and Quit. The Settings window has the tabs General, Voices, Reading and Advanced (the engine
-and High-quality mode: not installed, running with its progress, installed, damaged, failed, cancelled); the status
-item has the icon (a waveform while reading) and its right-click menu.
+and High-quality mode: not installed, running with its progress, installed, an update available, damaged, failed,
+cancelled); the status item has the icon (a waveform while reading) and its right-click menu.
 
 ## Important Conventions
 

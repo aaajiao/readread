@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 
@@ -47,14 +48,24 @@ final class InstallerHarness {
         get throws { try XCTUnwrap(launcher.last, "install-hq.sh was not launched") }
     }
 
-    /// What a finished install leaves in /hq.
-    func installFiles(bytes: Int64 = 2_400_000_000) {
-        let json = #"{"version":1,"models":{"1.7b":{"bytes":\#(bytes)}},"installed_at":"2026-10-20T09:30:00Z"}"#
+    /// What a finished install leaves in /hq; `lockSHA256`: install.json's `lock_sha256`.
+    func installFiles(bytes: Int64 = 2_400_000_000, lockSHA256: String? = nil) {
+        let lock = lockSHA256.map { #""lock_sha256":"\#($0)","# } ?? ""
+        let json = #"{"version":1,\#(lock)"models":{"1.7b":{"bytes":\#(bytes)}},"installed_at":"2026-10-20T09:30:00Z"}"#
         fs.addFile("/hq/install.json", size: UInt64(json.utf8.count))
         fs.tails["/hq/install.json"] = Data(json.utf8)
         fs.directories.insert("/hq/models/" + QwenModel.folder)
         fs.addFile("/hq/venv/bin/python3", executable: true)
         for stamp in HQInstallation.completionStamps { fs.addFile("/hq/" + stamp) }
+    }
+
+    /// requirements-hq.lock holding `text` beside the script at `script`; its sha256.
+    @discardableResult
+    func addLock(_ text: String, besideScript script: String = InstallerHarness.script) -> String {
+        let path = HQInstallation.lockFile(forScript: script)
+        fs.addFile(path, size: UInt64(text.utf8.count))
+        fs.tails[path] = Data(text.utf8)
+        return SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     func removeInstallFiles() {
@@ -501,6 +512,92 @@ final class HQInstallerTests: XCTestCase {
         noHome.fs.directories.insert("/Users/test/Library/Application Support/ReadRead/hq/python")
         noHome.installer.refresh()
         XCTAssertFalse(noHome.installer.hasLeftoverFiles, "no HQ home, nothing of it")
+    }
+
+    // MARK: - The packages this app ships
+
+    /// install.json's lock_sha256 against the requirements-hq.lock beside the script the installer
+    /// would run: another one (an app update bumped it) is an update, not damage.
+    func testAnInstallFromAnotherLockHasAPackageUpdate() {
+        let harness = InstallerHarness()
+        let shipped = harness.addLock("mlx-audio==0.6.8\n")
+        harness.installFiles(lockSHA256: shipped)
+        harness.installer.refresh()
+        XCTAssertNotNil(harness.installer.installState.installation)
+        XCTAssertEqual(harness.installer.shippedLockSHA256(), shipped)
+        XCTAssertFalse(harness.installer.hasPackageUpdate, "the same lock")
+
+        harness.addLock("mlx-audio==0.6.9\n")
+        harness.installer.refresh()
+        XCTAssertTrue(harness.installer.hasPackageUpdate, "the app ships another lock")
+        XCTAssertEqual(harness.installer.installState.installation?.lockSHA256, shipped)
+
+        harness.installFiles()  // an install.json without lock_sha256
+        harness.installer.refresh()
+        XCTAssertTrue(harness.installer.hasPackageUpdate)
+
+        harness.fs.files.removeValue(forKey: HQInstallation.lockFile(forScript: InstallerHarness.script))
+        harness.installer.refresh()
+        XCTAssertNil(harness.installer.shippedLockSHA256())
+        XCTAssertFalse(harness.installer.hasPackageUpdate, "no lock beside the script: nothing to compare")
+    }
+
+    func testOnlyAUsableInstallHasAPackageUpdate() {
+        let harness = InstallerHarness()
+        harness.addLock("new\n")
+        harness.installer.refresh()
+        XCTAssertEqual(harness.installer.installState, .notInstalled)
+        XCTAssertFalse(harness.installer.hasPackageUpdate)
+        harness.installFiles(lockSHA256: "0123")
+        harness.fs.files.removeValue(forKey: "/hq/venv/bin/python3")
+        harness.installer.refresh()
+        guard case .damaged = harness.installer.installState else {
+            return XCTFail("expected damaged, got \(harness.installer.installState)")
+        }
+        XCTAssertFalse(harness.installer.hasPackageUpdate, "damaged: Repair, not Update")
+
+        let noScript = InstallerHarness(scriptExists: false)
+        noScript.addLock("new\n")
+        noScript.installFiles(lockSHA256: "0123")
+        noScript.installer.refresh()
+        XCTAssertNotNil(noScript.installer.installState.installation)
+        XCTAssertFalse(noScript.installer.hasPackageUpdate, "no installer to run: nothing to offer")
+    }
+
+    /// The app: the lock in the bundle's installer/ (the script's), not the checkout's.
+    func testTheShippedLockIsTheBundlesWhenTheBundlesScriptRuns() {
+        let resources = "/Applications/ReadRead.app/Contents/Resources"
+        let bundleScript = resources + "/installer/scripts/install-hq.sh"
+        let harness = InstallerHarness(bundleResources: resources, scriptPath: nil)
+        harness.fs.addFile(bundleScript)
+        harness.fs.addFile("/work/scripts/install-hq.sh")
+        let bundled = harness.addLock("bundled\n", besideScript: bundleScript)
+        let checkout = harness.addLock("checkout\n", besideScript: "/work/scripts/install-hq.sh")
+        harness.installFiles(lockSHA256: checkout)
+        harness.installer.refresh()
+        XCTAssertEqual(harness.installer.resolveScript(), bundleScript)
+        XCTAssertEqual(harness.installer.shippedLockSHA256(), bundled)
+        XCTAssertTrue(harness.installer.hasPackageUpdate)
+        harness.installFiles(lockSHA256: bundled)
+        harness.installer.refresh()
+        XCTAssertFalse(harness.installer.hasPackageUpdate)
+    }
+
+    /// An Update (an install over a working one) that finishes writes the new lock_sha256: the
+    /// offer goes once install.json is read again.
+    func testAFinishedUpdateEndsTheOffer() throws {
+        let harness = InstallerHarness()
+        let shipped = harness.addLock("new\n")
+        harness.installFiles(lockSHA256: "0ld")
+        harness.installer.refresh()
+        XCTAssertTrue(harness.installer.hasPackageUpdate)
+        harness.installer.start(.install)
+        let process = try harness.process
+        harness.installFiles(lockSHA256: shipped)
+        process.emit(#"{"event":"done","models":["1.7b"]}"# + "\n")
+        process.exit(code: 0)
+        XCTAssertEqual(harness.installer.state, .finished(.install))
+        XCTAssertFalse(harness.installer.hasPackageUpdate)
     }
 
     /// installer-tmp is install-hq.sh's TMPDIR: what pip left there after a cancel goes before the

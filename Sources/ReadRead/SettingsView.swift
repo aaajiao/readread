@@ -419,16 +419,7 @@ struct HighQualityModeSection: View {
                     .help("Stop the installer; installing again resumes where it stopped")
             }
         case .installed(let installation):
-            LabeledContent("Model") {
-                Text(verbatim: "Qwen3-TTS 1.7B · \(HQFormat.bytes(installation.modelBytes))")
-                    .foregroundStyle(.secondary)
-            }
-            if let date = installation.installedAt {
-                LabeledContent("Installed") {
-                    Text(date, format: .dateTime.year().month().day())
-                        .foregroundStyle(.secondary)
-                }
-            }
+            installedRows(installation)
             if confirmation == .uninstall {
                 uninstallConfirmation(freeing: installation.modelBytes + HQFormat.runtimeBytes)
             } else {
@@ -438,6 +429,21 @@ struct HighQualityModeSection: View {
                         .help("Check every file of the installation without changing anything")
                     Button("Uninstall…") { confirmation = .uninstall }
                         .help("Remove high-quality mode from this Mac (asks first)")
+                }
+            }
+        case .updateAvailable(let installation):
+            installedRows(installation)
+            message(String(localized: "An update is available: this version of ReadRead comes with other versions of high-quality mode's packages. Qwen3-TTS reads with the installed ones until you update; updating replaces them and keeps the downloaded model."),
+                    isError: false)
+            if confirmation == .uninstall {
+                uninstallConfirmation(freeing: installation.modelBytes + HQFormat.runtimeBytes)
+            } else {
+                HStack {
+                    Spacer()
+                    Button("Uninstall…") { confirmation = .uninstall }
+                        .help("Remove high-quality mode from this Mac (asks first)")
+                    Button("Update") { appState.runInstaller(.install) }
+                        .help("Install the packages this version of ReadRead comes with; the model is kept")
                 }
             }
         case .damaged(let reason):
@@ -461,6 +467,21 @@ struct HighQualityModeSection: View {
         case .cancelled(let operation):
             message(AppState.cancelledMessage(operation), isError: false)
             outcomeActions(operation)
+        }
+    }
+
+    /// The installed model and when it was installed.
+    @ViewBuilder
+    private func installedRows(_ installation: HQInstallation) -> some View {
+        LabeledContent("Model") {
+            Text(verbatim: "Qwen3-TTS 1.7B · \(HQFormat.bytes(installation.modelBytes))")
+                .foregroundStyle(.secondary)
+        }
+        if let date = installation.installedAt {
+            LabeledContent("Installed") {
+                Text(date, format: .dateTime.year().month().day())
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

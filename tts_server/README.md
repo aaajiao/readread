@@ -151,6 +151,9 @@ READREAD_TOKEN=$(openssl rand -hex 32) "$HQ/venv/bin/python3" -I -B tts_server/t
   removes that once it wrote install.json again: a run that stops after a change (cancelled, a download or pip
   failing) leaves an install that reads as unfinished, never the record of a finished one whose venv or model files
   it was replacing (`--check` then says so); one that stops before it changed anything leaves install.json as it was.
+  The app compares `lock_sha256` with the requirements-hq.lock beside the install-hq.sh it runs: when they differ
+  (an app update changed the lock), Settings offers Update, this script's install run, which rebuilds venv/ and keeps
+  the model files; Qwen keeps running from the old venv until then.
 - There is one model, so there is nothing to choose: `--model 1.7b` is still accepted (older command lines), any other
   `--model` is a usage error (exit status 2).
 - Idempotent: python/ and venv/ are rebuilt only when their inputs change or one of their files no longer matches

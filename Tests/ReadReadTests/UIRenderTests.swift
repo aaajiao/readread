@@ -219,8 +219,8 @@ final class UIRenderTests: XCTestCase {
     /// Qwen not yet available), the install confirmation, installing (step 3 of 6, a model file
     /// downloading), installed (Qwen chosen, the install's notice), the uninstall confirmation,
     /// failed, cancelled (with Remove Downloaded Files…), not installed with what a cancelled
-    /// install left, a failed Verify (with Uninstall…), damaged, no HQ home; and the Voices tab with
-    /// Qwen's voices.
+    /// install left, a failed Verify (with Uninstall…), an update to the packages available (with
+    /// Update), damaged, no HQ home; and the Voices tab with Qwen's voices.
     func testHighQualityModeSettings() async throws {
         try await renderHighQualitySettings(suffix: "")
         try await inChinese { try await self.renderHighQualitySettings(suffix: "-zh") }
@@ -280,6 +280,11 @@ final class UIRenderTests: XCTestCase {
         harness.installer.finish(as: .failed, message: "the HQ install has problems:\n  - "
             + "\(QwenModel.folder)/model.safetensors is missing or does not match its pinned size and sha256")
         try await render("hq-verify-failed\(suffix)", size: size) { Self.advanced(harness.state) }
+
+        harness = try Harness(scratch: scratch, install: .installed(makeInstallation()))
+        harness.installer.hasPackageUpdate = true  // install.json records another requirements-hq.lock
+        XCTAssertEqual(harness.state.highQualityStatus, .updateAvailable(makeInstallation()))
+        try await render("hq-update-available\(suffix)", size: size) { Self.advanced(harness.state) }
 
         harness = try Harness(scratch: scratch, install: .damaged(
             "install.json lists the 1.7b model, but models/\(QwenModel.folder) is missing"))
@@ -384,7 +389,7 @@ final class UIRenderTests: XCTestCase {
     /// Chinese and English, and the top of Settings › Advanced with high-quality mode installed, in
     /// the English interface, the bottom bar showing `READREAD_RENDER_VERSION` (skipped without it):
     ///
-    ///     READREAD_RENDER_UI=1 READREAD_RENDER_DIR=docs/screenshots READREAD_RENDER_VERSION=0.5.0 \
+    ///     READREAD_RENDER_UI=1 READREAD_RENDER_DIR=docs/screenshots READREAD_RENDER_VERSION=0.5.1 \
     ///       swift test --filter UIRenderTests/testTheReadmeScreenshots
     func testTheReadmeScreenshots() async throws {
         let version = ProcessInfo.processInfo.environment["READREAD_RENDER_VERSION"] ?? ""

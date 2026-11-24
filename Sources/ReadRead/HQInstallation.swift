@@ -1,10 +1,13 @@
 import CoreFoundation
+import CryptoKit
 import Foundation
 
 /// The high-quality install's home and its install.json, as install-hq.sh writes them (format in
 /// tts_server/README.md: `{"version":1,"python","lock_sha256","models":{"1.7b":{"repo",
 /// "revision","dir","files","bytes"}},"installed_at"}`, written last, once the install's smoke test
-/// passed). Reading never runs a process and reads at most `maxManifestBytes` of the file.
+/// passed). Reading never runs a process and reads at most `maxManifestBytes` of the file. Its
+/// `lock_sha256` is compared with the requirements-hq.lock beside the installer this app runs
+/// (`lockFile(forScript:)`, `lockSHA256(atPath:fileSystem:)`): another one means an update.
 extension HQInstallation {
     static let manifestName = "install.json"
     /// Where install-hq.sh moves install.json before an install or repair first changes python/,
@@ -15,6 +18,8 @@ extension HQInstallation {
     /// the whole lock and the venv matched it: a venv being rebuilt has no stamp yet.
     static let completionStamps = ["python/.readread-python", "venv/.readread-hq-venv"]
     static let maxManifestBytes = 1 << 20
+    /// The most of requirements-hq.lock that is read to hash it (far above the lock's size).
+    static let maxLockBytes = 1 << 20
 
     /// `$READREAD_HQ_HOME` (a leading `~` expanded), else `~/Library/Application Support/ReadRead/hq`;
     /// nil when the variable is set but empty, which never means the default (as in install-hq.sh).
@@ -70,7 +75,8 @@ extension HQInstallation {
         let installation = HQInstallation(
             home: home,
             installedAt: (object["installed_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) },
-            modelBytes: number(model["bytes"]).map { max(0, $0.int64Value) } ?? 0)
+            modelBytes: number(model["bytes"]).map { max(0, $0.int64Value) } ?? 0,
+            lockSHA256: (object["lock_sha256"] as? String)?.lowercased())
         let folder = (installation.modelsDirectory as NSString).appendingPathComponent(QwenModel.folder)
         guard fileSystem.directoryExists(atPath: folder) else {
             return .damaged(String(localized: "The model folder \(folder) is missing.", table: "Engine"))
@@ -106,6 +112,33 @@ extension HQInstallation {
             return .damaged(emptyHomeMessage)
         }
         return read(home: home, fileSystem: fileSystem)
+    }
+
+    // MARK: - The packages this app ships
+
+    /// The requirements-hq.lock that the install-hq.sh at `script` installs: common.sh's
+    /// `RR_HQ_LOCK_FILE`, `tts_server/requirements-hq.lock` in the folder above the script's
+    /// (the repo, or the bundle's `Contents/Resources/installer/`).
+    static func lockFile(forScript script: String) -> String {
+        let root = ((script as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+        return (root as NSString).appendingPathComponent("tts_server/requirements-hq.lock")
+    }
+
+    /// The sha256 of the file at `path` (lowercase hex, as install-hq.sh's `rr_sha256` writes
+    /// `lock_sha256`); nil when it is missing, unreadable or larger than `maxLockBytes` (1 MB, far
+    /// above the lock's size). Reads the file, never runs a process.
+    @MainActor
+    static func lockSHA256(atPath path: String, fileSystem: any FileSystem) -> String? {
+        guard let data = fileSystem.contents(atPath: path, maxBytes: maxLockBytes) else { return nil }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Its venv was built from another requirements-hq.lock than `shipped` (the sha256 of the lock
+    /// beside the installer this app runs), or install.json records none (`install-hq.sh --check`
+    /// fails both). False without `shipped`: nothing to compare with.
+    func needsPackageUpdate(shippedLockSHA256 shipped: String?) -> Bool {
+        guard let shipped else { return false }
+        return lockSHA256 != shipped.lowercased()
     }
 
     /// Why there is no HQ home: `$READREAD_HQ_HOME` is set but empty.

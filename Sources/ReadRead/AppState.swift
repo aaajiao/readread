@@ -81,6 +81,15 @@ final class AppState {
     /// Qwen was the engine when an install or uninstall set it aside for Kokoro: one that does not
     /// finish (failed, cancelled) gives it back while Qwen can still be chosen.
     @ObservationIgnored private var qwenBeforeInstaller = false
+    /// The install running is Settings' Update (the install's packages are not the ones this app
+    /// ships), or Try Again after one: when it finishes, the engine chosen before it comes back.
+    @ObservationIgnored private var updatingPackages = false
+    /// An Update that failed or was cancelled (non-nil: Try Again is an Update too), and whether
+    /// Qwen was chosen before it (a failure that left the install damaged could not give it back).
+    /// Cleared by any finished run and by any run that is not that Try Again; never persisted.
+    @ObservationIgnored private var interruptedUpdate: Bool?
+    /// The panel said in this run that Qwen3-TTS reads with other packages than this app ships.
+    @ObservationIgnored private var packageUpdateAnnounced = false
 
     private struct QwenEngine {
         let installation: HQInstallation
@@ -333,6 +342,7 @@ final class AppState {
         switch result {
         case .success(let document):
             open(document)
+            announcePackageUpdate()
         case .failure(let error):
             if !(error is CancellationError) { loadError = error }
         }
@@ -759,6 +769,15 @@ final class AppState {
         }
     }
 
+    /// Once per run, the first time a document opened with Qwen3-TTS while its packages are not the
+    /// ones this app ships: the panel's notice says where to update (Settings). Only once a document
+    /// opened: a load that failed would hide it behind its error, and Retry clears notices.
+    private func announcePackageUpdate() {
+        guard !packageUpdateAnnounced, engineKind == .qwen, installer.hasPackageUpdate else { return }
+        packageUpdateAnnounced = true
+        notice = String(localized: "An update for high-quality mode is available in Settings › Advanced › High-quality mode. Until then Qwen3-TTS reads with the packages installed before.")
+    }
+
     // MARK: - High-quality mode (Settings › Advanced)
 
     /// What Settings › Advanced › High-quality mode shows: the operation running or how the last
@@ -773,7 +792,8 @@ final class AppState {
         }
         switch installer.installState {
         case .notInstalled: return .notInstalled
-        case .installed(let installation): return .installed(installation)
+        case .installed(let installation):
+            return installer.hasPackageUpdate ? .updateAvailable(installation) : .installed(installation)
         case .damaged(let message): return .damaged(message)
         }
     }
@@ -788,18 +808,24 @@ final class AppState {
         }
     }
 
-    /// Install (also Repair and Try Again), Verify or Uninstall. An install may rebuild the venv
-    /// the Qwen server runs from and an uninstall removes it, so for both the player leaves Qwen
-    /// for Kokoro and the Qwen server stops first.
+    /// Install (also Repair, Update and Try Again), Verify or Uninstall. An install may rebuild the
+    /// venv the Qwen server runs from and an uninstall removes it, so for both the player leaves
+    /// Qwen for Kokoro and the Qwen server stops first. A finished install selects Qwen, except an
+    /// Update (also its Try Again after a failure or a cancel), which gives back the engine chosen
+    /// before it.
     func runInstaller(_ operation: InstallerOperation) {
         guard !installer.state.isRunning, pendingInstallerOperation == nil else { return }
         clearSettingsNotice(.highQuality)
+        // Try Again after an Update that failed or was cancelled is that Update again.
+        let retriedUpdate = (operation == .install && highQualityStatus.isUnfinishedInstall) ? interruptedUpdate : nil
+        if retriedUpdate == nil { interruptedUpdate = nil }
         guard operation != .check else {
             installer.start(operation)
             return
         }
         let qwenEngine = qwen?.synthesizer
-        qwenBeforeInstaller = engineKind == .qwen
+        qwenBeforeInstaller = engineKind == .qwen || retriedUpdate == true
+        updatingPackages = operation == .install && (highQualityStatus.isUpdateAvailable || retriedUpdate != nil)
         if engineKind == .qwen {
             preferences.engine = .kokoro
             switchEngine(to: .kokoro, stopsPrevious: false)
@@ -820,6 +846,7 @@ final class AppState {
             installerStart.cancel()
             self.installerStart = nil
             pendingInstallerOperation = nil
+            updatingPackages = false
             report(Self.cancelledMessage(operation), isError: false)
             restoreQwenChoice()
             return
@@ -845,11 +872,18 @@ final class AppState {
     /// reported, an install that went away leaves Qwen.
     private func installerFinished(_ operation: InstallerOperation, _ outcome: InstallerState) {
         installer.refresh()
+        // An Update that does not finish: its Try Again is still one (with the engine chosen before).
+        let interrupted: Bool? = (operation == .install && updatingPackages) ? qwenBeforeInstaller : nil
         switch outcome {
         case .finished:
+            interruptedUpdate = nil
             switch operation {
             case .install:
-                if canChooseQwen {
+                if canChooseQwen, updatingPackages {
+                    // The engine chosen before the update comes back (Kokoro stays Kokoro).
+                    if qwenBeforeInstaller { setEngine(.qwen) }
+                    report(String(localized: "High-quality mode was updated."), isError: false)
+                } else if canChooseQwen {
                     setEngine(.qwen)
                     report(String(localized: "High-quality mode is installed. ReadRead now reads with Qwen3-TTS."), isError: false)
                 } else {
@@ -863,16 +897,19 @@ final class AppState {
                 report(String(localized: "High-quality mode was uninstalled."), isError: false)
             }
         case .failed(_, let message):
+            interruptedUpdate = interrupted
             // Settings shows the failure in the section itself (with Try Again).
             report(Self.failureMessage(operation, message), isError: true, inSettings: false)
             restoreQwenChoice()
         case .cancelled:
+            interruptedUpdate = interrupted
             report(Self.cancelledMessage(operation), isError: false, inSettings: false)
             restoreQwenChoice()
         case .idle, .running:
             break
         }
         qwenBeforeInstaller = false
+        updatingPackages = false
         reconcileEngine()
     }
 
@@ -1077,9 +1114,25 @@ enum HighQualityStatus: Equatable, Sendable {
     case notInstalled
     case running(InstallerOperation, InstallerProgress)
     case installed(HQInstallation)
+    /// Installed and usable, but built from another requirements-hq.lock than this app ships
+    /// (`HQInstalling.hasPackageUpdate`): Update runs the install again.
+    case updateAvailable(HQInstallation)
     case damaged(String)
     case failed(InstallerOperation, message: String)
     case cancelled(InstallerOperation)
+
+    var isUpdateAvailable: Bool {
+        if case .updateAvailable = self { return true }
+        return false
+    }
+
+    /// An install that failed or was cancelled: the section offers Try Again.
+    var isUnfinishedInstall: Bool {
+        switch self {
+        case .failed(.install, _), .cancelled(.install): true
+        default: false
+        }
+    }
 }
 
 /// What Settings › Advanced › High-quality mode can remove (`AppState.highQualityRemoval`).
@@ -1099,6 +1152,7 @@ final class NoHQInstaller: HQInstalling {
     private(set) var state: InstallerState = .idle
     let installState: HQInstallState = .notInstalled
     let hasLeftoverFiles = false
+    let hasPackageUpdate = false
     let logFileURL: URL
     @ObservationIgnored var onFinish: (@MainActor (InstallerOperation, InstallerState) -> Void)?
 

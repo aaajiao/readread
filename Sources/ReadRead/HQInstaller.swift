@@ -68,7 +68,8 @@ extension InstallerOperation {
 /// server log), after a header line per run. How it ended decides the outcome: exit 0 after a
 /// `done` event finished; a `cancel()` cancelled; an `error` event failed with the script's
 /// message; anything else failed with the status and the log's path. Then `installState` is read
-/// again and `onFinish` called. Cancel and shutdown signal the script's process group (bash leads
+/// again (with `hasPackageUpdate`: install.json's `lock_sha256` against the lock beside the
+/// script) and `onFinish` called. Cancel and shutdown signal the script's process group (bash leads
 /// one of its own); installer-tmp, its private TMPDIR, is emptied before a run and removed after.
 @Observable
 @MainActor
@@ -76,6 +77,7 @@ final class HQInstaller: HQInstalling {
     private(set) var state: InstallerState = .idle
     private(set) var installState: HQInstallState = .notInstalled
     private(set) var hasLeftoverFiles = false
+    private(set) var hasPackageUpdate = false
     @ObservationIgnored var onFinish: (@MainActor (InstallerOperation, InstallerState) -> Void)?
     /// What the last `done` event listed: the installed or checked model (`["1.7b"]`).
     @ObservationIgnored private(set) var reportedModels: [String] = []
@@ -130,6 +132,15 @@ final class HQInstaller: HQInstalling {
         let leftovers = fresh == .notInstalled
             && home.map { HQInstallation.hasLeftovers(home: $0, fileSystem: env.fileSystem) } == true
         if leftovers != hasLeftoverFiles { hasLeftoverFiles = leftovers }
+        let update = fresh.installation?.needsPackageUpdate(shippedLockSHA256: shippedLockSHA256()) == true
+        if update != hasPackageUpdate { hasPackageUpdate = update }
+    }
+
+    /// The sha256 of the requirements-hq.lock beside the script `start(.install)` would run (the
+    /// bundle's, else the checkout's: `resolveScript`); nil without a script or a readable lock.
+    func shippedLockSHA256() -> String? {
+        guard let script = resolveScript() else { return nil }
+        return HQInstallation.lockSHA256(atPath: HQInstallation.lockFile(forScript: script), fileSystem: env.fileSystem)
     }
 
     // MARK: - The script

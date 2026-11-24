@@ -28,6 +28,8 @@
 "The installer finished, but high-quality mode cannot be used: %@" = "安装程序已完成，但无法使用高音质模式：%@";
 "High-quality mode is intact: every file was verified." = "高音质模式完好：每个文件都已验证。";
 "High-quality mode was uninstalled." = "已卸载高音质模式。";
+"High-quality mode was updated." = "高音质模式已更新。";
+"An update for high-quality mode is available in Settings › Advanced › High-quality mode. Until then Qwen3-TTS reads with the packages installed before." = "高音质模式有可用的更新，可以在“设置 › 高级 › 高音质模式”中更新。在那之前，Qwen3-TTS 继续用之前安装的软件包朗读。";
 "Installing high-quality mode failed: %@" = "安装高音质模式失败：%@";
 "Verifying high-quality mode failed: %@" = "验证高音质模式失败：%@";
 "Uninstalling high-quality mode failed: %@" = "卸载高音质模式失败：%@";
@@ -216,6 +218,9 @@
 "High-quality mode cannot be used: %@" = "无法使用高音质模式：%@";
 "Repair" = "修复";
 "Install again: what is missing or damaged is downloaded again" = "重新安装：缺失或损坏的部分会重新下载";
+"An update is available: this version of ReadRead comes with other versions of high-quality mode's packages. Qwen3-TTS reads with the installed ones until you update; updating replaces them and keeps the downloaded model." = "有可用的更新：这个版本的 ReadRead 附带了另一版本的高音质模式软件包。更新之前，Qwen3-TTS 继续用已安装的软件包朗读；更新会替换它们，并保留已下载的模型。";
+"Update" = "更新";
+"Install the packages this version of ReadRead comes with; the model is kept" = "安装这个版本的 ReadRead 附带的软件包；模型会保留";
 "Try Again" = "再试一次";
 "Python packages" = "Python 软件包";
 "Model files" = "模型文件";

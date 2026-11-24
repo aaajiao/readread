@@ -544,6 +544,185 @@ final class AppStateEngineTests: XCTestCase {
         await waitUntil { self.kokoro.stopCount == 1 }
     }
 
+    // MARK: - An update to the packages (another requirements-hq.lock than this app's)
+
+    /// The old venv still runs: Qwen stays chosen and choosable, Settings offers Update.
+    func testAnInstallFromAnotherLockOffersAnUpdateAndStaysUsable() {
+        store.set("qwen", forKey: "engine")
+        installer.hasPackageUpdate = true
+        let state = makeState()
+        XCTAssertEqual(state.engineKind, .qwen)
+        XCTAssertTrue(state.player.synthesizer === qwen)
+        XCTAssertTrue(state.canChooseQwen)
+        XCTAssertEqual(state.highQualityStatus, .updateAvailable(installation))
+        XCTAssertEqual(state.highQualityRemoval, .install)
+        XCTAssertNil(state.notice, "not at launch: when a document is read")
+        installer.hasPackageUpdate = false
+        XCTAssertEqual(state.highQualityStatus, .installed(installation))
+    }
+
+    /// Update while Qwen reads: Kokoro meanwhile, Qwen's server stopped first, then Qwen again
+    /// from the updated install, said under High-quality mode.
+    func testAnUpdateGivesQwenBackFromTheUpdatedInstall() async {
+        store.set("qwen", forKey: "engine")
+        shell.isSettingsVisible = true
+        installer.hasPackageUpdate = true
+        let state = makeState()
+        await startReading(in: state, with: qwen)
+        state.runInstaller(.install)
+        XCTAssertEqual(state.engineKind, .kokoro)
+        XCTAssertEqual(state.highQualityStatus, .running(.install, InstallerProgress()))
+        await waitUntil { self.installer.started == [.install] }
+        XCTAssertEqual(qwen.stopCount, 1)
+
+        installer.hasPackageUpdate = false
+        installer.finish(as: .finished, onDisk: .installed(updated))
+        XCTAssertEqual(state.engineKind, .qwen)
+        XCTAssertEqual(store.string(forKey: "engine"), "qwen")
+        XCTAssertEqual(made, [installation, updated], "the updated install gets a new engine")
+        XCTAssertTrue(state.player.synthesizer === qwenEngines[1])
+        XCTAssertEqual(state.settingsNotice,
+                       SettingsNotice(section: .highQuality, message: "High-quality mode was updated.", isError: false))
+        XCTAssertEqual(state.highQualityStatus, .installed(updated))
+    }
+
+    /// Update while Kokoro is chosen: Kokoro stays (a first install would select Qwen).
+    func testAnUpdateKeepsKokoroWhenKokoroWasChosen() async {
+        installer.hasPackageUpdate = true
+        let state = makeState()
+        XCTAssertEqual(state.engineKind, .kokoro)
+        state.runInstaller(.install)
+        await waitUntil { self.installer.started == [.install] }
+        installer.hasPackageUpdate = false
+        installer.finish(as: .finished, onDisk: .installed(updated))
+        XCTAssertEqual(state.engineKind, .kokoro)
+        XCTAssertNil(store.object(forKey: "engine"))
+        XCTAssertEqual(state.notice, "High-quality mode was updated.", "Settings is closed: the panel says it")
+        XCTAssertTrue(made.isEmpty)
+    }
+
+    /// Repair after a failed Verify is no Update, even with another lock: it selects Qwen as an
+    /// install does.
+    func testRepairAfterAFailedVerifyStillSelectsQwen() async {
+        installer.hasPackageUpdate = true
+        let state = makeState()
+        state.runInstaller(.check)
+        installer.finish(as: .failed, message: "install.json records another requirements-hq.lock")
+        XCTAssertEqual(state.highQualityStatus, .failed(.check, message: "install.json records another requirements-hq.lock"))
+        state.runInstaller(.install)
+        await waitUntil { self.installer.started == [.check, .install] }
+        installer.hasPackageUpdate = false
+        installer.finish(as: .finished, onDisk: .installed(updated))
+        XCTAssertEqual(state.engineKind, .qwen)
+        XCTAssertEqual(state.notice, "High-quality mode is installed. ReadRead now reads with Qwen3-TTS.")
+    }
+
+    /// The panel says it once per run, when a document is read with Qwen; never with Kokoro.
+    private static let updateNotice = "An update for high-quality mode is available in Settings › Advanced › High-quality mode. Until then Qwen3-TTS reads with the packages installed before."
+
+    /// Try Again after a cancelled Update is the Update again: a Kokoro user stays on Kokoro.
+    func testTryAgainAfterACancelledUpdateKeepsKokoro() async {
+        installer.hasPackageUpdate = true
+        let state = makeState()
+        state.runInstaller(.install)
+        await waitUntil { self.installer.started == [.install] }
+        installer.cancel()  // before install-hq.sh changed anything: the install is as it was
+        XCTAssertEqual(state.highQualityStatus, .cancelled(.install))
+        XCTAssertEqual(state.engineKind, .kokoro)
+
+        state.runInstaller(.install)  // Try Again
+        await waitUntil { self.installer.started == [.install, .install] }
+        installer.hasPackageUpdate = false
+        installer.finish(as: .finished, onDisk: .installed(updated))
+        XCTAssertEqual(state.engineKind, .kokoro)
+        XCTAssertNil(store.object(forKey: "engine"))
+        XCTAssertEqual(state.notice, "High-quality mode was updated.")
+        XCTAssertTrue(made.isEmpty)
+    }
+
+    /// An Update that failed after it began changing the install (damaged: Qwen cannot come back
+    /// at once): Try Again still gives back the Qwen choice made before the Update.
+    func testTryAgainAfterAFailedUpdateGivesQwenBack() async {
+        store.set("qwen", forKey: "engine")
+        installer.hasPackageUpdate = true
+        let state = makeState()
+        XCTAssertEqual(state.engineKind, .qwen)
+        state.runInstaller(.install)
+        await waitUntil { self.installer.started == [.install] }
+        installer.hasPackageUpdate = false
+        installer.finish(as: .failed, message: "pip install failed (exit 1)",
+                         onDisk: .damaged("The last install or repair has not finished."))
+        XCTAssertEqual(state.engineKind, .kokoro, "damaged: Qwen cannot come back yet")
+        XCTAssertEqual(state.highQualityStatus, .failed(.install, message: "pip install failed (exit 1)"))
+
+        state.runInstaller(.install)  // Try Again
+        await waitUntil { self.installer.started == [.install, .install] }
+        installer.finish(as: .finished, onDisk: .installed(updated))
+        XCTAssertEqual(state.engineKind, .qwen)
+        XCTAssertEqual(store.string(forKey: "engine"), "qwen")
+        XCTAssertEqual(made, [installation, updated])
+        XCTAssertEqual(state.notice, "High-quality mode was updated.")
+    }
+
+    /// An interrupted Update counts only for its own Try Again: after an uninstall, an install is a
+    /// first install again (it selects Qwen).
+    func testAnInterruptedUpdateDoesNotOutliveAnotherRun() async {
+        installer.hasPackageUpdate = true
+        let state = makeState()
+        state.runInstaller(.install)
+        await waitUntil { self.installer.started == [.install] }
+        installer.cancel()
+        state.runInstaller(.uninstall)
+        await waitUntil { self.installer.started == [.install, .uninstall] }
+        installer.hasPackageUpdate = false
+        installer.finish(as: .finished, onDisk: .notInstalled)
+        XCTAssertEqual(state.highQualityStatus, .notInstalled)
+
+        state.runInstaller(.install)
+        await waitUntil { self.installer.started == [.install, .uninstall, .install] }
+        installer.finish(as: .finished, onDisk: .installed(updated))
+        XCTAssertEqual(state.engineKind, .qwen)
+        XCTAssertEqual(state.notice, "High-quality mode is installed. ReadRead now reads with Qwen3-TTS.")
+    }
+
+    /// The notice waits for a document that opened: a failed first load (its error on the banner)
+    /// does not use it up, and Retry, which clears notices, shows it.
+    func testTheUpdateNoticeWaitsForADocumentThatOpened() async throws {
+        let url = "https://example.com/flaky"
+        loader.set("第一句话在这里。第二句话也在这里。", title: "Flaky", domain: "example.com", for: url)
+        loader.fail(.url(try XCTUnwrap(URL(string: url))), with: URLError(.timedOut))
+        store.set("qwen", forKey: "engine")
+        installer.hasPackageUpdate = true
+        let state = makeState()
+        submit(url, in: state)
+        await waitUntil { state.errorMessage != nil }
+        XCTAssertNil(state.notice, "no document opened yet")
+        state.retry()
+        await waitUntil { state.player.state == .playing }
+        XCTAssertEqual(state.notice, Self.updateNotice)
+        XCTAssertNil(state.errorMessage)
+    }
+
+    func testThePanelSaysOnceThatAnUpdateIsAvailable() async {
+        let message = Self.updateNotice
+        installer.hasPackageUpdate = true
+        let kokoroState = makeState()
+        await startReading(in: kokoroState, with: kokoro)
+        XCTAssertNil(kokoroState.notice, "Kokoro reads: nothing to say")
+
+        store.set("qwen", forKey: "engine")
+        let state = makeState()
+        XCTAssertNil(state.notice)
+        await startReading(in: state, with: qwen)
+        XCTAssertEqual(state.notice, message)
+        XCTAssertEqual(state.bannerMessage, message)
+        XCTAssertNil(state.errorMessage)
+
+        submit("第三句话。第四句话。", in: state)
+        await waitUntil { state.player.state == .playing && self.qwen.requests.count >= 4 }
+        XCTAssertNil(state.notice, "said once")
+    }
+
     func testUninstallSwitchesToKokoroAndStopsQwenBeforeTheInstallerRuns() async {
         store.set("qwen", forKey: "engine")
         shell.isSettingsVisible = true

@@ -657,6 +657,7 @@ final class FakeInstaller: HQInstalling {
     var state: InstallerState = .idle
     var installState: HQInstallState = .notInstalled
     var hasLeftoverFiles = false
+    var hasPackageUpdate = false
     @ObservationIgnored var logFileURL = URL(fileURLWithPath: "/logs/hq-install.log")
     @ObservationIgnored var onFinish: (@MainActor (InstallerOperation, InstallerState) -> Void)?
     /// What the next `refresh()` reads from install.json (nil: what it said before).
@@ -707,8 +708,8 @@ final class FakeInstaller: HQInstalling {
 
 /// An installation as install.json records it.
 func makeInstallation(home: String = "/hq", installedAt: Date? = Date(timeIntervalSince1970: 1_792_551_739),
-                      modelBytes: Int64 = 3_080_140_019) -> HQInstallation {
-    HQInstallation(home: home, installedAt: installedAt, modelBytes: modelBytes)
+                      modelBytes: Int64 = 3_080_140_019, lockSHA256: String? = nil) -> HQInstallation {
+    HQInstallation(home: home, installedAt: installedAt, modelBytes: modelBytes, lockSHA256: lockSHA256)
 }
 
 /// Stands in for `DocumentLoader.load` in the app tests: text and files become documents through
